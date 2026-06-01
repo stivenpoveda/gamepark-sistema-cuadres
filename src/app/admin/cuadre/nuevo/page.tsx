@@ -193,6 +193,7 @@ export default function CuadreWizard() {
             faltante: 0,
             consignacion_pendiente: pendienteArrastre,
             valor_consignado: 0,
+            consigna_hoy: true,
           };
           
           const { data: newCuadre, error: insertError } = await supabase
@@ -232,7 +233,7 @@ export default function CuadreWizard() {
         'total_fisico', 'total_sistema', 'sobrante', 'faltante',
         'url_foto_consignacion', 'firma_cajero_url', 'observaciones',
         'fecha_envio', 'fecha_aprobacion', 'observacion_superadmin',
-        'consignacion_pendiente', 'valor_consignado'
+        'consignacion_pendiente', 'valor_consignado', 'consigna_hoy'
       ];
 
       // Filtrar solo los campos permitidos
@@ -322,6 +323,8 @@ export default function CuadreWizard() {
     (localCuadre?.tar_fiestas || 0) -
     (localCuadre?.tar_malas || 0);
 
+  const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
+
   const nextStep = async () => {
     // Save local state to database before moving to next step
     await saveCuadre(localCuadre);
@@ -339,8 +342,8 @@ export default function CuadreWizard() {
     try {
       await saveDenominaciones();
       
-      // Si tiene foto de consignación, marcar como enviado. Si no, como pendiente.
-      const nuevoEstado = cuadre.url_foto_consignacion ? 'enviado' : 'pendiente';
+      const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
+      const nuevoEstado = consignaHoy ? (cuadre.url_foto_consignacion ? 'enviado' : 'pendiente') : 'enviado';
       
       const updates = {
         ...localCuadre,
@@ -352,16 +355,26 @@ export default function CuadreWizard() {
         estado: nuevoEstado as 'enviado' | 'pendiente',
         fecha_envio: new Date().toISOString(),
         ...(nuevoEstado === 'enviado'
-          ? {
-              valor_consignado: Number(valorConsignadoInput) || 0,
-              consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
-            }
+          ? consignaHoy
+            ? {
+                valor_consignado: Number(valorConsignadoInput) || 0,
+                consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
+              }
+            : {
+                url_foto_consignacion: undefined,
+                valor_consignado: 0,
+                consignacion_pendiente: totalEfectivoConPendiente,
+              }
           : {}),
       };
       
       await saveCuadre(updates);
       
-      toast.success(nuevoEstado === 'enviado' ? 'Cuadre enviado exitosamente' : 'Cuadre guardado como Pendiente (falta foto de consignación)');
+      toast.success(
+        nuevoEstado === 'enviado'
+          ? 'Cuadre enviado exitosamente'
+          : 'Cuadre guardado como Pendiente (falta foto de consignación)'
+      );
       router.push('/admin');
     } catch (error: unknown) {
       console.error('Error en enviarCuadre:', error);
@@ -374,7 +387,8 @@ export default function CuadreWizard() {
 
   const handleFotoConsignacionUpload = async (url: string) => {
     // First, save the URL
-    await saveCuadre({ url_foto_consignacion: url });
+    setLocalCuadre((prev) => ({ ...prev, consigna_hoy: true }));
+    await saveCuadre({ url_foto_consignacion: url, consigna_hoy: true });
     // Then show the modal to confirm consignacion details
     setShowConsignacionModal(true);
     // Calculate the expected consignacion value (pendiente anterior + total de hoy)
@@ -781,47 +795,100 @@ export default function CuadreWizard() {
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-4">Paso 7: Consignación y Envío</h2>
               
-              {!cuadre?.url_foto_consignacion && (
+              <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                <p className="font-medium text-gray-800">¿Vas a consignar hoy?</p>
+                <div className="flex flex-wrap gap-4 mt-3">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="consignaHoy"
+                      checked={consignaHoy}
+                      onChange={async () => {
+                        setLocalCuadre((prev) => ({ ...prev, consigna_hoy: true }));
+                        setReadyToSend(false);
+                        setNuevoPendienteConsignacion(null);
+                        if (!cuadre?.url_foto_consignacion) {
+                          setValorConsignadoInput('');
+                        }
+                        await saveCuadre({ consigna_hoy: true });
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">Sí, voy a consignar</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="consignaHoy"
+                      checked={!consignaHoy}
+                      onChange={async () => {
+                        setLocalCuadre((prev) => ({ ...prev, consigna_hoy: false }));
+                        setReadyToSend(true);
+                        setShowConsignacionModal(false);
+                        setValorConsignadoInput(0);
+                        setNuevoPendienteConsignacion(totalEfectivoConPendiente);
+                        if (cuadre?.url_foto_consignacion) {
+                          await saveCuadre({ url_foto_consignacion: undefined });
+                        }
+                        await saveCuadre({ consigna_hoy: false });
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-gray-700">No, hoy no consigno</span>
+                  </label>
+                </div>
+              </div>
+
+              {consignaHoy && !cuadre?.url_foto_consignacion && (
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-yellow-800 font-medium">⚠️ Sin foto de consignación</p>
                   <p className="text-yellow-700 text-sm mt-1">Si envías sin la foto, el cuadre quedará como <strong>Pendiente</strong> y podrás agregar la foto después.</p>
                 </div>
               )}
               
-              {cuadre?.url_foto_consignacion && (
+              {consignaHoy && cuadre?.url_foto_consignacion && (
                 <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                   <p className="text-green-800 font-medium">✅ Foto de consignación cargada</p>
                   <p className="text-green-700 text-sm mt-1">El cuadre se marcará como <strong>Enviado</strong> y ya no podrás editarlo.</p>
                 </div>
               )}
+
+              {!consignaHoy && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-blue-800 font-medium">ℹ️ Hoy no se realizará consignación</p>
+                  <p className="text-blue-700 text-sm mt-1">El <strong>Total General a Consignar</strong> quedará como pendiente para el próximo cuadre.</p>
+                </div>
+              )}
               
-              <div>
-                <h3 className="text-lg font-medium mb-3">Foto Consignación</h3>
-                <UploadFoto
-                  bucket="soportes"
-                  currentUrl={cuadre?.url_foto_consignacion}
-                  onUpload={handleFotoConsignacionUpload}
-                  onRemove={() => {
-                    saveCuadre({ url_foto_consignacion: undefined });
-                    setReadyToSend(false);
-                    setNuevoPendienteConsignacion(null);
-                    setValorConsignadoInput('');
-                  }}
-                />
-                {cuadre?.url_foto_consignacion && (
-                  <button
-                    onClick={() => {
-                      setShowConsignacionModal(true);
-                      if (valorConsignadoInput === '') {
-                        setValorConsignadoInput(totalEfectivoConPendiente);
-                      }
+              {consignaHoy && (
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Foto Consignación</h3>
+                  <UploadFoto
+                    bucket="soportes"
+                    currentUrl={cuadre?.url_foto_consignacion}
+                    onUpload={handleFotoConsignacionUpload}
+                    onRemove={() => {
+                      saveCuadre({ url_foto_consignacion: undefined });
+                      setReadyToSend(false);
+                      setNuevoPendienteConsignacion(null);
+                      setValorConsignadoInput('');
                     }}
-                    className="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                  >
-                    Editar Confirmación de Consignación
-                  </button>
-                )}
-              </div>
+                  />
+                  {cuadre?.url_foto_consignacion && (
+                    <button
+                      onClick={() => {
+                        setShowConsignacionModal(true);
+                        if (valorConsignadoInput === '') {
+                          setValorConsignadoInput(totalEfectivoConPendiente);
+                        }
+                      }}
+                      className="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                    >
+                      Editar Confirmación de Consignación
+                    </button>
+                  )}
+                </div>
+              )}
               
               <div>
                 <h3 className="text-lg font-medium mb-3">Firma Cajero</h3>
@@ -883,8 +950,10 @@ export default function CuadreWizard() {
               
               <button
                 onClick={enviarCuadre}
-                disabled={saving || !cuadre?.firma_cajero_url || (!!cuadre?.url_foto_consignacion && !readyToSend)}
-                className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${cuadre?.url_foto_consignacion ? 'bg-success text-white' : 'bg-warning text-white'}`}
+                disabled={saving || !cuadre?.firma_cajero_url || (consignaHoy && !!cuadre?.url_foto_consignacion && !readyToSend)}
+                className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  consignaHoy ? (cuadre?.url_foto_consignacion ? 'bg-success text-white' : 'bg-warning text-white') : 'bg-success text-white'
+                }`}
               >
                 {saving ? (
                   <>
@@ -892,7 +961,7 @@ export default function CuadreWizard() {
                     Guardando...
                   </>
                 ) : (
-                  cuadre?.url_foto_consignacion ? 'Enviar Cuadre' : 'Guardar como Pendiente'
+                  consignaHoy ? (cuadre?.url_foto_consignacion ? 'Enviar Cuadre' : 'Guardar como Pendiente') : 'Enviar Cuadre'
                 )}
               </button>
             </div>

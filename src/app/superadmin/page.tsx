@@ -169,10 +169,14 @@ export default function SuperAdminDashboard() {
     .reduce((sum, c) => sum + Number(c.total_sistema || 0), 0);
 
   const localesActivos = puntosDeVenta.filter(p => p.activo).length;
-  const cuadresPendientes = cuadres.filter(c => (c.estado === 'enviado' && !c.url_foto_consignacion) || c.estado === 'pendiente').length;
+  const cuadresPendientes = cuadres.filter(
+    (c) => c.estado === 'pendiente' || ((c.consigna_hoy ?? true) === true && !c.url_foto_consignacion)
+  ).length;
   const ultimoPendientePorPdv = cuadres.reduce<Record<string, { id: string; fecha: string }>>((acc, c) => {
-    if (!c.url_foto_consignacion) return acc;
     if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
+    const consignaHoy = (c.consigna_hoy ?? true) === true;
+    const esCerrado = !consignaHoy || !!c.url_foto_consignacion;
+    if (!esCerrado) return acc;
     const key = c.punto_de_venta_id || '';
     if (!key) return acc;
     const existing = acc[key];

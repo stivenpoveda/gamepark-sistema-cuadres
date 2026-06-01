@@ -79,6 +79,7 @@ export type CuadreDiario = {
   faltante: number;
   consignacion_pendiente: number;
   valor_consignado: number;
+  consigna_hoy?: boolean;
   url_foto_consignacion?: string;
   firma_cajero_url?: string;
   firma_admin_url?: string;

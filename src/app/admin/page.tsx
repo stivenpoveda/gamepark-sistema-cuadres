@@ -82,8 +82,10 @@ export default function AdminDashboard() {
 
   const cuadreForSelectedDate = cuadres.find(c => c.fecha === selectedDate);
   const ultimoCuadreConPendiente = cuadres.reduce<CuadreDiario | null>((acc, c) => {
-    if (!c.url_foto_consignacion) return acc;
     if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
+    const consignaHoy = (c.consigna_hoy ?? true) === true;
+    const esCerrado = !consignaHoy || !!c.url_foto_consignacion;
+    if (!esCerrado) return acc;
     if (!acc) return c;
     const accTime = new Date(acc.fecha).getTime();
     const cTime = new Date(c.fecha).getTime();
@@ -128,7 +130,9 @@ export default function AdminDashboard() {
       const puedeEditar = 
         cuadreForSelectedDate.estado === 'borrador' || 
         cuadreForSelectedDate.estado === 'pendiente' ||
-        (cuadreForSelectedDate.estado === 'enviado' && !cuadreForSelectedDate.url_foto_consignacion);
+        (cuadreForSelectedDate.estado === 'enviado' &&
+          (cuadreForSelectedDate.consigna_hoy ?? true) === true &&
+          !cuadreForSelectedDate.url_foto_consignacion);
       
       if (puedeEditar) {
         // Redirigir al wizard con la fecha
@@ -149,6 +153,7 @@ export default function AdminDashboard() {
           recaudo: 0,
           venta_tarjetas: 0,
           venta_fiesta: 0,
+          venta_confiteria: 0,
           recibos: 0,
           venta_cajero_auto: 0,
           tar_inicial: 0,
@@ -160,6 +165,9 @@ export default function AdminDashboard() {
           total_sistema: 0,
           sobrante: 0,
           faltante: 0,
+          consignacion_pendiente: 0,
+          valor_consignado: 0,
+          consigna_hoy: true,
         })
         .select()
         .single();
@@ -226,7 +234,7 @@ export default function AdminDashboard() {
           <nav className="px-4 py-6 flex-1">
             <a href="/admin" className="flex items-center gap-3 px-4 py-3 bg-white/20 rounded-lg mb-2 hover:bg-white/30 transition-all duration-200">
               <FileText className="w-5 h-5" />
-              Dashboard
+              Inicio
             </a>
             <a href="/admin/gastos" className="flex items-center gap-3 px-4 py-3 hover:bg-white/20 rounded-lg mb-2 transition-all duration-200">
               <FileText className="w-5 h-5" />
@@ -312,7 +320,7 @@ export default function AdminDashboard() {
               <p className="text-sm text-blue-800 mb-2">Estado del cuadre para esta fecha:</p>
               <div className="flex flex-wrap items-center gap-2">
                 {getEstadoBadge(cuadreForSelectedDate.estado)}
-                {!cuadreForSelectedDate.url_foto_consignacion && (
+                {(cuadreForSelectedDate.consigna_hoy ?? true) === true && !cuadreForSelectedDate.url_foto_consignacion && (
                   <span className="text-sm text-orange-600 bg-orange-50 px-2 py-1 rounded">
                     ⚠️ Pendiente foto consignación
                   </span>
@@ -329,13 +337,17 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-xs sm:text-sm text-gray-600 mb-2">Total Físico</p>
             <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.total_fisico || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Total Sistema</p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Venta Total (Sistema)</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.recaudo || 0)}</p>
+          </div>
+          <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Valor a Consignar</p>
             <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.total_sistema || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
@@ -359,7 +371,8 @@ export default function AdminDashboard() {
               <thead className="bg-light">
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Total</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Venta Total</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor a Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
@@ -369,7 +382,8 @@ export default function AdminDashboard() {
                 {cuadres.map((cuadre) => (
                   <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
                     <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.total_fisico)}</td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.total_sistema)}</td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">
                       {cuadre.consignacion_pendiente &&
@@ -389,7 +403,9 @@ export default function AdminDashboard() {
                             const puedeEditar = 
                               cuadre.estado === 'borrador' || 
                               cuadre.estado === 'pendiente' ||
-                              (cuadre.estado === 'enviado' && !cuadre.url_foto_consignacion);
+                              (cuadre.estado === 'enviado' &&
+                                (cuadre.consigna_hoy ?? true) === true &&
+                                !cuadre.url_foto_consignacion);
                             
                             if (puedeEditar) {
                               router.push(`/admin/cuadre/nuevo?date=${cuadre.fecha}`);
@@ -400,12 +416,16 @@ export default function AdminDashboard() {
                           className="text-primary hover:text-primary/80 font-medium hover:underline text-xs sm:text-sm"
                         >
                           {
-                            (cuadre.estado === 'borrador' || cuadre.estado === 'pendiente' || (cuadre.estado === 'enviado' && !cuadre.url_foto_consignacion))
+                            (cuadre.estado === 'borrador' ||
+                              cuadre.estado === 'pendiente' ||
+                              (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion))
                               ? 'Editar'
                               : 'Ver'
                           }
                         </button>
-                        {(cuadre.estado === 'borrador' || cuadre.estado === 'pendiente' || (cuadre.estado === 'enviado' && !cuadre.url_foto_consignacion)) && (
+                        {(cuadre.estado === 'borrador' ||
+                          cuadre.estado === 'pendiente' ||
+                          (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)) && (
                           <button
                             onClick={() => handleDeleteCuadre(cuadre.id)}
                             disabled={deleting === cuadre.id}

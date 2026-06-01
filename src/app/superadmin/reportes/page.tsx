@@ -14,15 +14,19 @@ export default function SuperadminReportesPage() {
   const [loading, setLoading] = useState(true);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
+  const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number>>({});
+  const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number>>({});
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [pdvSeleccionado, setPdvSeleccionado] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
-      const [pdvRes, cuadresRes] = await Promise.all([
+      const [pdvRes, cuadresRes, gastosRes, turnerosRes] = await Promise.all([
         supabase.from('puntos_de_venta').select('*'),
         supabase.from('cuadres_diarios').select('*').order('fecha', { ascending: false }),
+        supabase.from('gastos_diarios').select('cuadre_id,valor'),
+        supabase.from('pagos_turneros').select('cuadre_id,valor'),
       ]);
 
       // Combine data como en la página principal
@@ -34,6 +38,18 @@ export default function SuperadminReportesPage() {
       console.log('✅ Cuadres cargados del superadmin:', cuadresWithData);
       setCuadres(cuadresWithData);
       setPuntosVenta(pdvRes.data || []);
+
+      const gastosMap: Record<string, number> = {};
+      (gastosRes.data || []).forEach((g) => {
+        gastosMap[g.cuadre_id] = (gastosMap[g.cuadre_id] || 0) + (Number(g.valor) || 0);
+      });
+      setGastosByCuadreId(gastosMap);
+
+      const turnerosMap: Record<string, number> = {};
+      (turnerosRes.data || []).forEach((t) => {
+        turnerosMap[t.cuadre_id] = (turnerosMap[t.cuadre_id] || 0) + (Number(t.valor) || 0);
+      });
+      setTurnerosByCuadreId(turnerosMap);
 
       const today = new Date();
       const lastMonth = new Date(today);
@@ -64,12 +80,27 @@ export default function SuperadminReportesPage() {
   const totals = cuadresFiltrados.reduce(
     (acc, c) => {
       acc.totalFisico += Number(c.total_fisico) || 0;
-      acc.totalSistema += Number(c.total_sistema) || 0;
+      acc.ventaTotal += Number(c.recaudo) || 0;
+      acc.valorAConsignar += Number(c.total_sistema) || 0;
+      acc.ventaDatafono += Number(c.venta_tarjetas) || 0;
+      acc.valorConsignado += Number(c.valor_consignado) || 0;
+      acc.gastos += gastosByCuadreId[c.id] || 0;
+      acc.turneros += turnerosByCuadreId[c.id] || 0;
       acc.sobrante += Number(c.sobrante) || 0;
       acc.faltante += Number(c.faltante) || 0;
       return acc;
     },
-    { totalFisico: 0, totalSistema: 0, sobrante: 0, faltante: 0 }
+    {
+      totalFisico: 0,
+      ventaTotal: 0,
+      valorAConsignar: 0,
+      ventaDatafono: 0,
+      valorConsignado: 0,
+      gastos: 0,
+      turneros: 0,
+      sobrante: 0,
+      faltante: 0,
+    }
   );
 
   const exportarExcel = async () => {
@@ -79,8 +110,14 @@ export default function SuperadminReportesPage() {
     worksheet.columns = [
       { header: 'Punto de Venta', key: 'pdv', width: 25 },
       { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Venta Total', key: 'ventaTotal', width: 15 },
+      { header: 'Valor a Consignar', key: 'valorAConsignar', width: 18 },
+      { header: 'Venta Datafono', key: 'ventaDatafono', width: 15 },
+      { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
+      { header: 'Gastos', key: 'gastos', width: 15 },
+      { header: 'Turneros', key: 'turneros', width: 15 },
+      { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
-      { header: 'Total Sistema', key: 'totalSistema', width: 15 },
       { header: 'Sobrante', key: 'sobrante', width: 15 },
       { header: 'Faltante', key: 'faltante', width: 15 },
       { header: 'Estado', key: 'estado', width: 15 },
@@ -90,8 +127,14 @@ export default function SuperadminReportesPage() {
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
         fecha: new Date(c.fecha).toLocaleDateString(),
+        ventaTotal: formatCOP(c.recaudo),
+        valorAConsignar: formatCOP(c.total_sistema),
+        ventaDatafono: formatCOP(c.venta_tarjetas),
+        valorConsignado: formatCOP(c.valor_consignado),
+        gastos: formatCOP(gastosByCuadreId[c.id] || 0),
+        turneros: formatCOP(turnerosByCuadreId[c.id] || 0),
+        pendiente: formatCOP(c.consignacion_pendiente),
         totalFisico: formatCOP(c.total_fisico),
-        totalSistema: formatCOP(c.total_sistema),
         sobrante: formatCOP(c.sobrante),
         faltante: formatCOP(c.faltante),
         estado: c.estado,
@@ -125,6 +168,67 @@ export default function SuperadminReportesPage() {
       </span>
     );
   };
+
+  const consolidadoMensual = Object.values(
+    cuadresFiltrados.reduce<Record<string, {
+      mes: string;
+      pdv: string;
+      pdvId: string;
+      ventaTotal: number;
+      valorAConsignar: number;
+      ventaDatafono: number;
+      valorConsignado: number;
+      gastos: number;
+      turneros: number;
+      pendienteFinMes: number;
+      _fechaMax: string;
+    }>>((acc, c) => {
+      const fecha = c.fecha.split('T')[0];
+      const mes = fecha.slice(0, 7);
+      const pdvId = c.punto_de_venta_id || 'N/A';
+      const pdv = c.punto_de_venta?.nombre || 'N/A';
+      const key = `${pdvId}|${mes}`;
+      const ventaTotal = Number(c.recaudo) || 0;
+      const valorAConsignar = Number(c.total_sistema) || 0;
+      const ventaDatafono = Number(c.venta_tarjetas) || 0;
+      const valorConsignado = Number(c.valor_consignado) || 0;
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const pendiente = Number(c.consignacion_pendiente) || 0;
+
+      if (!acc[key]) {
+        acc[key] = {
+          mes,
+          pdv,
+          pdvId,
+          ventaTotal: 0,
+          valorAConsignar: 0,
+          ventaDatafono: 0,
+          valorConsignado: 0,
+          gastos: 0,
+          turneros: 0,
+          pendienteFinMes: pendiente,
+          _fechaMax: fecha,
+        };
+      }
+
+      acc[key].ventaTotal += ventaTotal;
+      acc[key].valorAConsignar += valorAConsignar;
+      acc[key].ventaDatafono += ventaDatafono;
+      acc[key].valorConsignado += valorConsignado;
+      acc[key].gastos += gastos;
+      acc[key].turneros += turneros;
+      if (fecha >= acc[key]._fechaMax) {
+        acc[key]._fechaMax = fecha;
+        acc[key].pendienteFinMes = pendiente;
+      }
+
+      return acc;
+    }, {})
+  ).sort((a, b) => {
+    if (a.mes === b.mes) return a.pdv.localeCompare(b.pdv);
+    return a.mes.localeCompare(b.mes);
+  });
 
   if (loading) {
     return (
@@ -208,14 +312,30 @@ export default function SuperadminReportesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Físico</p>
-            <p className="text-2xl font-bold text-blue-700">{formatCOP(totals.totalFisico)}</p>
+            <p className="text-sm text-gray-600">Venta Total</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaTotal)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Sistema</p>
-            <p className="text-2xl font-bold text-gray-700">{formatCOP(totals.totalSistema)}</p>
+            <p className="text-sm text-gray-600">Valor a Consignar</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorAConsignar)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Venta Datafono</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaDatafono)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Valor Consignado</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorConsignado)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Gastos</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.gastos)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Turneros</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.turneros)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
             <p className="text-sm text-gray-600">Total Sobrante</p>
@@ -234,8 +354,14 @@ export default function SuperadminReportesPage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Punto de Venta</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Fecha</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Venta Total</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Valor a Consignar</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Venta Datafono</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Valor Consignado</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Gastos</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Turneros</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Pendiente</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Físico</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Sistema</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Diferencia</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Estado</th>
                 </tr>
@@ -243,7 +369,7 @@ export default function SuperadminReportesPage() {
               <tbody className="divide-y divide-gray-200">
                 {cuadresFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={12} className="px-6 py-8 text-center text-gray-500">
                       No hay cuadres para mostrar en este rango de fechas.
                     </td>
                   </tr>
@@ -252,12 +378,64 @@ export default function SuperadminReportesPage() {
                     <tr key={cuadre.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm font-medium">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm">{formatDate(cuadre.fecha)}</td>
-                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.total_fisico)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
                       <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.total_sistema)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.venta_tarjetas)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.valor_consignado)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.consignacion_pendiente)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.total_fisico)}</td>
                       <td className={`px-6 py-4 text-sm font-medium ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
                         {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
                       </td>
                       <td className="px-6 py-4">{getEstadoBadge(cuadre.estado)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-8 bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Consolidado Mensual</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-light">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Mes</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Punto de Venta</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Venta Total</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Valor a Consignar</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Venta Datafono</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Valor Consignado</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Gastos</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Turneros</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Pendiente Fin de Mes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {consolidadoMensual.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                      No hay datos para el consolidado mensual en este rango.
+                    </td>
+                  </tr>
+                ) : (
+                  consolidadoMensual.map((row) => (
+                    <tr key={`${row.pdvId}|${row.mes}`} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm font-medium">{row.mes}</td>
+                      <td className="px-6 py-4 text-sm">{row.pdv}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.ventaTotal)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.valorAConsignar)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.ventaDatafono)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.valorConsignado)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.gastos)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.turneros)}</td>
+                      <td className="px-6 py-4 text-sm font-medium">{formatCOP(row.pendienteFinMes)}</td>
                     </tr>
                   ))
                 )}
