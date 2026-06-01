@@ -522,6 +522,48 @@ export default function CuadreDetalle() {
 
     worksheet.addRow([]);
 
+    // DETALLE DE GASTOS INDIVIDUALES
+    if (cuadre.gastos_diarios && cuadre.gastos_diarios.length > 0) {
+      filaActualGastos++;
+      worksheet.getCell(`B${filaActualGastos}`).value = 'DETALLE DE GASTOS';
+      worksheet.getCell(`B${filaActualGastos}`).font = { bold: true, size: 11 };
+      applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
+      filaActualGastos++;
+      
+      cuadre.gastos_diarios.forEach((gasto) => {
+        worksheet.getCell(`B${filaActualGastos}`).value = gasto.categoria;
+        worksheet.getCell(`C${filaActualGastos}`).value = gasto.valor;
+        worksheet.getCell(`C${filaActualGastos}`).numFmt = '#,##0';
+        worksheet.getCell(`C${filaActualGastos}`).alignment = { horizontal: 'right' };
+        worksheet.getCell(`D${filaActualGastos}`).value = gasto.descripcion;
+        applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
+        filaActualGastos++;
+      });
+      
+      worksheet.addRow([]);
+    }
+
+    // DETALLE DE TURNEROS INDIVIDUALES
+    if (cuadre.pagos_turneros && cuadre.pagos_turneros.length > 0) {
+      filaActualGastos++;
+      worksheet.getCell(`B${filaActualGastos}`).value = 'DETALLE DE TURNEROS';
+      worksheet.getCell(`B${filaActualGastos}`).font = { bold: true, size: 11 };
+      applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
+      filaActualGastos++;
+      
+      cuadre.pagos_turneros.forEach((turnero) => {
+        worksheet.getCell(`B${filaActualGastos}`).value = 'Turnos';
+        worksheet.getCell(`C${filaActualGastos}`).value = turnero.valor;
+        worksheet.getCell(`C${filaActualGastos}`).numFmt = '#,##0';
+        worksheet.getCell(`C${filaActualGastos}`).alignment = { horizontal: 'right' };
+        worksheet.getCell(`D${filaActualGastos}`).value = `${turnero.nombre_turnero}${turnero.horario ? ` - ${turnero.horario}` : ''}`;
+        applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
+        filaActualGastos++;
+      });
+      
+      worksheet.addRow([]);
+    }
+
     // 6. TOTAL EN CAJA
     const filaTotalCaja = filaActualGastos + 2;
     worksheet.getCell(`B${filaTotalCaja}`).value = '6 TOTAL EN CAJA';
