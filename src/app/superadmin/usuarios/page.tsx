@@ -71,7 +71,7 @@ export default function UsuariosPage() {
           activo: true,
         });
         if (error) throw error;
-        toast.success('Usuario creado exitosamente. El usuario debe registrarse usando el mismo email.');
+        toast.success('Usuario creado exitosamente. Ahora el usuario debe usar la opción "Olvidé mi contraseña" en el login para establecer su contraseña.');
       }
 
       const [usuariosRes, pdvRes] = await Promise.all([

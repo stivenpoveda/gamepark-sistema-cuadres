@@ -178,12 +178,22 @@ function LoginContent() {
 
         <div className="text-center">
           <p className="text-gray-600 text-sm">
-            ¿No tienes cuenta?{' '}
+            ¿Olvidaste tu contraseña?{' '}
             <button
-              onClick={() => router.push('/registro')}
+              onClick={async () => {
+                const emailVal = prompt('Ingresa tu email:');
+                if (emailVal) {
+                  const { error } = await supabase.auth.resetPasswordForEmail(emailVal);
+                  if (error) {
+                    toast.error(error.message);
+                  } else {
+                    toast.success('Revisa tu email para restablecer tu contraseña');
+                  }
+                }
+              }}
               className="text-primary font-medium hover:underline"
             >
-              Regístrate aquí
+              Restablecer aquí
             </button>
           </p>
         </div>
