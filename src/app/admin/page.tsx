@@ -81,6 +81,14 @@ export default function AdminDashboard() {
   }, [router]);
 
   const cuadreForSelectedDate = cuadres.find(c => c.fecha === selectedDate);
+  const ultimoCuadreConPendiente = cuadres.reduce<CuadreDiario | null>((acc, c) => {
+    if (!c.url_foto_consignacion) return acc;
+    if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
+    if (!acc) return c;
+    const accTime = new Date(acc.fecha).getTime();
+    const cTime = new Date(c.fecha).getTime();
+    return cTime > accTime ? c : acc;
+  }, null);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -306,7 +314,14 @@ export default function AdminDashboard() {
                 {getEstadoBadge(cuadreForSelectedDate.estado)}
                 {!cuadreForSelectedDate.url_foto_consignacion && (
                   <span className="text-sm text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                    ⚠️ Pendiente consignación
+                    ⚠️ Pendiente foto consignación
+                  </span>
+                )}
+                {cuadreForSelectedDate.consignacion_pendiente &&
+                  cuadreForSelectedDate.consignacion_pendiente > 0 &&
+                  ultimoCuadreConPendiente?.id === cuadreForSelectedDate.id && (
+                  <span className="text-sm text-orange-800 bg-orange-100 px-2 py-1 rounded font-medium">
+                    ⚠️ Faltante por consignar: {formatCOP(cuadreForSelectedDate.consignacion_pendiente)}
                   </span>
                 )}
               </div>
@@ -346,6 +361,7 @@ export default function AdminDashboard() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Total</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
@@ -355,6 +371,17 @@ export default function AdminDashboard() {
                     <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.total_fisico)}</td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
+                      {cuadre.consignacion_pendiente &&
+                      cuadre.consignacion_pendiente > 0 &&
+                      ultimoCuadreConPendiente?.id === cuadre.id ? (
+                        <span className="text-orange-700 font-medium text-xs sm:text-sm">
+                          {formatCOP(cuadre.consignacion_pendiente)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs sm:text-sm">$0</span>
+                      )}
+                    </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <div className="flex items-center gap-2">
                         <button

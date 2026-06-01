@@ -185,12 +185,279 @@ export default function CuadreDetalle() {
   const totalGastos = cuadre.gastos_diarios?.reduce((sum, g) => sum + g.valor, 0) || 0;
   const totalTurneros = cuadre.pagos_turneros?.reduce((sum, t) => sum + t.valor, 0) || 0;
   const totalEfectivoEsperado = (cuadre.recaudo || 0) - (cuadre.venta_tarjetas || 0) - totalGastos - totalTurneros;
+  const totalGeneralAConsignar = cuadre.url_foto_consignacion
+    ? Number(cuadre.valor_consignado || 0) + Number(cuadre.consignacion_pendiente || 0)
+    : totalEfectivoEsperado + Number(cuadre.consignacion_pendiente || 0);
+  const pendienteInicial = Math.max(0, totalGeneralAConsignar - totalEfectivoEsperado);
+
+  const exportarCuadroDiarioPDF = () => {
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const gastosArqueo = [
+      'Mantenimiento y Reparaciones',
+      'Pagos Tecnico - Auditor Mecanico',
+      'Servicio Publicos y Telefono',
+      'Turnos',
+      'Transporte, Fletes y Acarreos Maquinaria y Repuestos',
+      'Fiestas',
+      'Compra redencion',
+      'Peluches',
+      'Utiles-Papeleria y Fotocopias',
+      'Base Refrigierios y H20',
+      'Bioseguridad',
+      'Publicidad y avisos varios',
+      'Compra de aseo',
+      'Viaticos-Pago hotel',
+      'Tarjetas malas y devoluciones',
+      'Otros',
+    ];
+
+    const gastosPorCategoria: Record<string, number> = {};
+    const detallesPorCategoria: Record<string, string[]> = {};
+
+    if (cuadre.gastos_diarios) {
+      cuadre.gastos_diarios.forEach((g) => {
+        const categoria = g.categoria || 'Otros';
+        gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + (Number(g.valor) || 0);
+        if (g.descripcion) {
+          detallesPorCategoria[categoria] = detallesPorCategoria[categoria] || [];
+          detallesPorCategoria[categoria].push(g.descripcion);
+        }
+      });
+    }
+
+    const totalTurnerosValue = cuadre.pagos_turneros?.reduce((sum, t) => sum + (Number(t.valor) || 0), 0) || 0;
+    gastosPorCategoria['Turnos'] = (gastosPorCategoria['Turnos'] || 0) + totalTurnerosValue;
+    if (cuadre.pagos_turneros) {
+      cuadre.pagos_turneros.forEach((t) => {
+        if (t.nombre_turnero) {
+          detallesPorCategoria['Turnos'] = detallesPorCategoria['Turnos'] || [];
+          detallesPorCategoria['Turnos'].push(t.nombre_turnero);
+        }
+      });
+    }
+
+    const operacionales = [
+      { label: 'Ventas Caja', value: Number(cuadre.recaudo || 0) },
+      { label: 'Venta Confiteria', value: Number(cuadre.venta_confiteria || 0) },
+      { label: 'Ventas no registrada', value: 0 },
+      { label: 'Fiesta Infantil', value: Number(cuadre.venta_fiesta || 0) },
+    ];
+    const totalIngresos = operacionales.reduce((sum, r) => sum + r.value, 0);
+
+    const sec2 = [
+      { label: 'Efectivo en cajx consignar (-Retiros)', value: Number(pendienteInicial || 0), highlight: true },
+      { label: 'Venta Datafono', value: Number(cuadre.venta_tarjetas || 0) },
+      { label: 'Consignaciones Bancos caja menor', value: 0 },
+    ];
+    const totalSec2 = totalIngresos + Number(pendienteInicial || 0) - Number(cuadre.venta_tarjetas || 0);
+
+    const totalGastosArqueo = gastosArqueo.reduce((sum, cat) => sum + (gastosPorCategoria[cat] || 0), 0);
+    const totalEnCaja = totalSec2 - totalGastosArqueo;
+
+    const fileName = `ARQUEO_FISCAL_${(cuadre.punto_de_venta?.nombre || 'LOCAL').replace(/\s+/g, '_')}_${cuadre.fecha}.pdf`;
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(fileName)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; }
+    .title { font-weight: 700; font-size: 18px; text-align: center; margin: 0 0 8px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 10px; font-size: 12px; }
+    .meta strong { color: #374151; }
+    .section { margin-top: 10px; }
+    .section-header { background: #EBF1DE; border: 1px solid #111827; padding: 6px 8px; font-weight: 700; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #111827; padding: 6px 8px; font-size: 11px; vertical-align: top; }
+    th { background: #F3F4F6; text-align: left; }
+    .right { text-align: right; }
+    .bold { font-weight: 700; }
+    .total-row td { background: #D9E2F3; font-weight: 700; }
+    .yellow { background: #FFF2CC; }
+    .wrap { white-space: pre-wrap; word-break: break-word; }
+    .sign { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .sign-box { border-top: 1px solid #111827; padding-top: 6px; text-align: center; font-size: 11px; }
+    .note { margin-top: 10px; font-size: 11px; font-weight: 700; }
+    @media print {
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="title">DIVERSIONES DE COLOMBIA</div>
+  <div class="meta">
+    <div><strong>Local:</strong> ${escapeHtml(cuadre.punto_de_venta?.nombre || '')}</div>
+    <div><strong>Ciudad:</strong> ${escapeHtml(cuadre.punto_de_venta?.ciudad || '')}</div>
+    <div><strong>Fecha:</strong> ${escapeHtml(formatDate(cuadre.fecha))}</div>
+    <div><strong>Estado:</strong> ${escapeHtml(cuadre.estado)}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">1 OPERACIONALES</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52%">CONCEPTO</th>
+          <th style="width:20%" class="right">VALOR</th>
+          <th style="width:28%">DETALLE</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${operacionales
+          .map(
+            (r) => `<tr><td>${escapeHtml(r.label)}</td><td class="right">${escapeHtml(formatCOP(r.value))}</td><td></td></tr>`
+          )
+          .join('')}
+        <tr class="total-row">
+          <td class="right bold">TOTAL INGRESOS</td>
+          <td class="right bold">${escapeHtml(formatCOP(totalIngresos))}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-header">2 DINERO EN CAJA Y/O CONSIGNACIONES EN BANCOS</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52%">CONCEPTO</th>
+          <th style="width:20%" class="right">VALOR</th>
+          <th style="width:28%">DETALLE</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sec2
+          .map((r) => {
+            const cls = r.highlight ? 'yellow' : '';
+            return `<tr><td>${escapeHtml(r.label)}</td><td class="right ${cls}">${escapeHtml(formatCOP(r.value))}</td><td></td></tr>`;
+          })
+          .join('')}
+        <tr class="total-row">
+          <td class="right bold">TOTAL</td>
+          <td class="right bold">${escapeHtml(formatCOP(totalSec2))}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-header">3 Créditos Préstamos</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52%">CONCEPTO</th>
+          <th style="width:20%" class="right">VALOR</th>
+          <th style="width:28%">DETALLE</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Anticipo a Contratistas y Otros</td><td class="right">${escapeHtml(formatCOP(0))}</td><td></td></tr>
+        <tr><td>Reembolso de Caja Menor</td><td class="right">${escapeHtml(formatCOP(0))}</td><td></td></tr>
+        <tr class="total-row"><td class="right bold">TOTAL</td><td class="right bold">${escapeHtml(formatCOP(0))}</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-header">4 GASTOS</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52%">CONCEPTO</th>
+          <th style="width:20%" class="right">VALOR</th>
+          <th style="width:28%">DETALLE</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${gastosArqueo
+          .map((categoria) => {
+            const value = gastosPorCategoria[categoria] || 0;
+            const details = (detallesPorCategoria[categoria] || []).filter(Boolean).join(', ');
+            return `<tr>
+              <td>${escapeHtml(categoria)}</td>
+              <td class="right">${escapeHtml(formatCOP(value))}</td>
+              <td class="wrap">${escapeHtml(details)}</td>
+            </tr>`;
+          })
+          .join('')}
+        <tr class="total-row">
+          <td class="right bold">TOTAL GASTOS</td>
+          <td class="right bold">${escapeHtml(formatCOP(totalGastosArqueo))}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-header">6 TOTAL EN CAJA</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:52%">CONCEPTO</th>
+          <th style="width:20%" class="right">VALOR</th>
+          <th style="width:28%">DETALLE</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="yellow">
+          <td class="bold right">TOTAL EN CAJA</td>
+          <td class="right bold">${escapeHtml(formatCOP(totalEnCaja))}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">Sobrante(${escapeHtml(formatCOP(Number(cuadre.sobrante) || 0))}) Faltante(${escapeHtml(formatCOP(Number(cuadre.faltante) || 0))})</div>
+  </div>
+
+  <div class="sign">
+    <div class="sign-box">Administrador Parque</div>
+    <div class="sign-box">Nombre</div>
+  </div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast.error('No se pudo abrir la ventana para imprimir el PDF');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    const tryPrint = () => {
+      try {
+        win.print();
+      } catch {
+        toast.error('No se pudo abrir la impresión del PDF');
+      }
+    };
+    win.onload = tryPrint;
+    setTimeout(tryPrint, 400);
+  };
 
   const exportarCuadroDiario = async () => {
     if (!cuadre) return;
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('ARQUEO FISCAL');
+
+    const efectivoCajaConsignar = pendienteInicial;
 
     // Establecer anchos de columna
     worksheet.columns = [
@@ -315,13 +582,13 @@ export default function CuadreDetalle() {
     applyBorders('B8', 'D8');
     
     worksheet.getCell('B9').value = 'Ventas Caja';
-    worksheet.getCell('C9').value = cuadre.recaudo - cuadre.venta_tarjetas;
+    worksheet.getCell('C9').value = cuadre.recaudo;
     worksheet.getCell('C9').numFmt = '#,##0';
     worksheet.getCell('C9').alignment = { horizontal: 'right' };
     applyBorders('B9', 'D9');
     
     worksheet.getCell('B10').value = 'Venta Confiteria';
-    worksheet.getCell('C10').value = cuadre.venta_tarjetas;
+    worksheet.getCell('C10').value = cuadre.venta_confiteria || 0;
     worksheet.getCell('C10').numFmt = '#,##0';
     worksheet.getCell('C10').alignment = { horizontal: 'right' };
     applyBorders('B10', 'D10');
@@ -366,7 +633,7 @@ export default function CuadreDetalle() {
     applyBorders('B16', 'D16');
 
     worksheet.getCell('B17').value = 'Efectivo en cajx consignar (-Retiros)';
-    worksheet.getCell('C17').value = cuadre.total_fisico;
+    worksheet.getCell('C17').value = efectivoCajaConsignar;
     worksheet.getCell('C17').numFmt = '#,##0';
     worksheet.getCell('C17').alignment = { horizontal: 'right' };
     worksheet.getCell('C17').fill = {
@@ -376,8 +643,8 @@ export default function CuadreDetalle() {
     };
     applyBorders('B17', 'D17');
 
-    worksheet.getCell('B18').value = 'Tarjeta Debito/Credito';
-    worksheet.getCell('C18').value = 0;
+    worksheet.getCell('B18').value = 'Venta Datafono';
+    worksheet.getCell('C18').value = cuadre.venta_tarjetas;
     worksheet.getCell('C18').numFmt = '#,##0';
     worksheet.getCell('C18').alignment = { horizontal: 'right' };
     applyBorders('B18', 'D18');
@@ -392,7 +659,7 @@ export default function CuadreDetalle() {
     worksheet.getCell('B21').value = 'TOTAL';
     worksheet.getCell('B21').font = { bold: true };
     worksheet.getCell('B21').alignment = { horizontal: 'right' };
-    worksheet.getCell('C21').value = { formula: '=C17+C18+C19' };
+    worksheet.getCell('C21').value = { formula: '=C14+C17-C18' };
     worksheet.getCell('C21').font = { bold: true };
     worksheet.getCell('C21').numFmt = '#,##0';
     worksheet.getCell('C21').alignment = { horizontal: 'right' };
@@ -476,23 +743,36 @@ export default function CuadreDetalle() {
 
     let filaActualGastos = 30;
     const gastosPorCategoria: Record<string, number> = {};
+    const detallesPorCategoria: Record<string, string[]> = {};
 
-    // Sumar gastos por categoría
     if (cuadre.gastos_diarios) {
       cuadre.gastos_diarios.forEach((g) => {
         gastosPorCategoria[g.categoria] = (gastosPorCategoria[g.categoria] || 0) + g.valor;
+        if (g.descripcion) {
+          detallesPorCategoria[g.categoria] = detallesPorCategoria[g.categoria] || [];
+          detallesPorCategoria[g.categoria].push(g.descripcion);
+        }
       });
     }
 
-    // Agregar turneros como gasto (Turnos)
     gastosPorCategoria['Turnos'] = (gastosPorCategoria['Turnos'] || 0) + totalTurneros;
+    if (cuadre.pagos_turneros) {
+      cuadre.pagos_turneros.forEach((t) => {
+        if (t.nombre_turnero) {
+          detallesPorCategoria['Turnos'] = detallesPorCategoria['Turnos'] || [];
+          detallesPorCategoria['Turnos'].push(t.nombre_turnero);
+        }
+      });
+    }
 
-    // Agregar cada categoría de gasto
     gastosArqueo.forEach((categoria) => {
       worksheet.getCell(`B${filaActualGastos}`).value = categoria;
       worksheet.getCell(`C${filaActualGastos}`).value = gastosPorCategoria[categoria] || 0;
       worksheet.getCell(`C${filaActualGastos}`).numFmt = '#,##0';
       worksheet.getCell(`C${filaActualGastos}`).alignment = { horizontal: 'right' };
+      const detalles = detallesPorCategoria[categoria]?.filter(Boolean) || [];
+      worksheet.getCell(`D${filaActualGastos}`).value = detalles.join(', ');
+      worksheet.getCell(`D${filaActualGastos}`).alignment = { wrapText: true, vertical: 'top' };
       applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
       filaActualGastos++;
     });
@@ -522,48 +802,6 @@ export default function CuadreDetalle() {
 
     worksheet.addRow([]);
 
-    // DETALLE DE GASTOS INDIVIDUALES
-    if (cuadre.gastos_diarios && cuadre.gastos_diarios.length > 0) {
-      filaActualGastos++;
-      worksheet.getCell(`B${filaActualGastos}`).value = 'DETALLE DE GASTOS';
-      worksheet.getCell(`B${filaActualGastos}`).font = { bold: true, size: 11 };
-      applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
-      filaActualGastos++;
-      
-      cuadre.gastos_diarios.forEach((gasto) => {
-        worksheet.getCell(`B${filaActualGastos}`).value = gasto.categoria;
-        worksheet.getCell(`C${filaActualGastos}`).value = gasto.valor;
-        worksheet.getCell(`C${filaActualGastos}`).numFmt = '#,##0';
-        worksheet.getCell(`C${filaActualGastos}`).alignment = { horizontal: 'right' };
-        worksheet.getCell(`D${filaActualGastos}`).value = gasto.descripcion;
-        applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
-        filaActualGastos++;
-      });
-      
-      worksheet.addRow([]);
-    }
-
-    // DETALLE DE TURNEROS INDIVIDUALES
-    if (cuadre.pagos_turneros && cuadre.pagos_turneros.length > 0) {
-      filaActualGastos++;
-      worksheet.getCell(`B${filaActualGastos}`).value = 'DETALLE DE TURNEROS';
-      worksheet.getCell(`B${filaActualGastos}`).font = { bold: true, size: 11 };
-      applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
-      filaActualGastos++;
-      
-      cuadre.pagos_turneros.forEach((turnero) => {
-        worksheet.getCell(`B${filaActualGastos}`).value = 'Turnos';
-        worksheet.getCell(`C${filaActualGastos}`).value = turnero.valor;
-        worksheet.getCell(`C${filaActualGastos}`).numFmt = '#,##0';
-        worksheet.getCell(`C${filaActualGastos}`).alignment = { horizontal: 'right' };
-        worksheet.getCell(`D${filaActualGastos}`).value = `${turnero.nombre_turnero}${turnero.horario ? ` - ${turnero.horario}` : ''}`;
-        applyBorders(`B${filaActualGastos}`, `D${filaActualGastos}`);
-        filaActualGastos++;
-      });
-      
-      worksheet.addRow([]);
-    }
-
     // 6. TOTAL EN CAJA
     const filaTotalCaja = filaActualGastos + 2;
     worksheet.getCell(`B${filaTotalCaja}`).value = '6 TOTAL EN CAJA';
@@ -575,7 +813,7 @@ export default function CuadreDetalle() {
     };
     applyBorders(`B${filaTotalCaja}`, `D${filaTotalCaja}`);
     
-    worksheet.getCell(`C${filaTotalCaja}`).value = { formula: `=C14-C${filaActualGastos}` };
+    worksheet.getCell(`C${filaTotalCaja}`).value = { formula: `=C21-C${filaActualGastos}` };
     worksheet.getCell(`C${filaTotalCaja}`).font = { bold: true, size: 14 };
     worksheet.getCell(`C${filaTotalCaja}`).numFmt = '#,##0';
     worksheet.getCell(`C${filaTotalCaja}`).alignment = { horizontal: 'center' };
@@ -662,6 +900,13 @@ export default function CuadreDetalle() {
               >
                 <Download className="w-4 h-4" />
                 ARQUEO FISCAL Excel
+              </button>
+              <button
+                onClick={exportarCuadroDiarioPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 shadow-sm hover:shadow transition-all"
+              >
+                <Download className="w-4 h-4" />
+                ARQUEO FISCAL PDF
               </button>
             </div>
           </div>
@@ -794,11 +1039,25 @@ export default function CuadreDetalle() {
                   </div>
                 )}
                 <div className="pt-2 border-t">
+                  <div className="flex justify-between font-bold text-xl">
+                    <span className="text-orange-800">Total General a Consignar</span>
+                    <span className="text-orange-800">{formatCOP(totalGeneralAConsignar)}</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t">
                   <div className="flex justify-between font-semibold text-lg">
-                    <span className="text-green-600">Total Efectivo Esperado</span>
+                    <span className="text-green-600">Valor a Consignar Hoy</span>
                     <span className="text-green-600">{formatCOP(totalEfectivoEsperado)}</span>
                   </div>
                 </div>
+                {pendienteInicial > 0 && (
+                  <div className="pt-2 border-t">
+                    <div className="flex justify-between font-semibold text-lg">
+                      <span className="text-orange-700">Pendiente al Iniciar (Días Anteriores)</span>
+                      <span className="text-orange-700">{formatCOP(pendienteInicial)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div>
@@ -909,6 +1168,19 @@ export default function CuadreDetalle() {
                     alt="Firma Cajero"
                     className="w-full max-w-lg rounded border border-gray-200 shadow-sm"
                   />
+                </div>
+              )}
+
+              {cuadre.url_foto_consignacion && (
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex justify-between font-semibold text-lg">
+                    <span className="text-gray-700">Valor Consignado</span>
+                    <span className="text-gray-900">{formatCOP(Number(cuadre.valor_consignado || 0))}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-lg mt-2">
+                    <span className="text-orange-700">Pendiente Próximo Cuadre</span>
+                    <span className="text-orange-800">{formatCOP(Number(cuadre.consignacion_pendiente || 0))}</span>
+                  </div>
                 </div>
               )}
             </div>

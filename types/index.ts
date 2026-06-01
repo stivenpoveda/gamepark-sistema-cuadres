@@ -65,6 +65,7 @@ export type CuadreDiario = {
   recaudo: number;
   venta_tarjetas: number;
   venta_fiesta: number;
+  venta_confiteria: number;
   recibos: number;
   venta_cajero_auto: number;
   tar_inicial: number;
@@ -76,6 +77,8 @@ export type CuadreDiario = {
   total_sistema: number;
   sobrante: number;
   faltante: number;
+  consignacion_pendiente: number;
+  valor_consignado: number;
   url_foto_consignacion?: string;
   firma_cajero_url?: string;
   firma_admin_url?: string;

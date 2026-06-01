@@ -170,6 +170,23 @@ export default function SuperAdminDashboard() {
 
   const localesActivos = puntosDeVenta.filter(p => p.activo).length;
   const cuadresPendientes = cuadres.filter(c => (c.estado === 'enviado' && !c.url_foto_consignacion) || c.estado === 'pendiente').length;
+  const ultimoPendientePorPdv = cuadres.reduce<Record<string, { id: string; fecha: string }>>((acc, c) => {
+    if (!c.url_foto_consignacion) return acc;
+    if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
+    const key = c.punto_de_venta_id || '';
+    if (!key) return acc;
+    const existing = acc[key];
+    if (!existing) {
+      acc[key] = { id: c.id, fecha: c.fecha };
+      return acc;
+    }
+    const existingTime = new Date(existing.fecha).getTime();
+    const cTime = new Date(c.fecha).getTime();
+    if (cTime > existingTime) {
+      acc[key] = { id: c.id, fecha: c.fecha };
+    }
+    return acc;
+  }, {});
 
   if (loading) {
     return (
@@ -367,6 +384,7 @@ export default function SuperAdminDashboard() {
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Local</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell">Ciudad</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell">Total</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
                   </tr>
@@ -378,6 +396,17 @@ export default function SuperAdminDashboard() {
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm hidden sm:table-cell">{cuadre.punto_de_venta?.ciudad || 'N/A'}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        {cuadre.consignacion_pendiente &&
+                        cuadre.consignacion_pendiente > 0 &&
+                        ultimoPendientePorPdv[cuadre.punto_de_venta_id || '']?.id === cuadre.id ? (
+                          <span className="text-orange-700 font-medium text-xs sm:text-sm">
+                            {formatCOP(cuadre.consignacion_pendiente)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs sm:text-sm">$0</span>
+                        )}
+                      </td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden sm:table-cell">{formatCOP(cuadre.total_fisico)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">
                         <div className="flex gap-2 items-center">

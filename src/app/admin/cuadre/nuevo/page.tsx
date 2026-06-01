@@ -45,8 +45,16 @@ export default function CuadreWizard() {
   const [turneros, setTurneros] = useState<PagoTurnero[]>([]);
   const [showGastoModal, setShowGastoModal] = useState(false);
   const [showTurneroModal, setShowTurneroModal] = useState(false);
+  const [showConsignacionModal, setShowConsignacionModal] = useState(false);
   const [newGasto, setNewGasto] = useState<Partial<GastoDiario>>({});
   const [newTurnero, setNewTurnero] = useState<Partial<PagoTurnero>>({});
+  const [consignacionCompleta, setConsignacionCompleta] = useState(true);
+  const [valorConsignadoInput, setValorConsignadoInput] = useState<number | ''>('');
+  const [nuevoPendienteConsignacion, setNuevoPendienteConsignacion] = useState<number | null>(null);
+  const [readyToSend, setReadyToSend] = useState(false);
+
+  // Local state for form fields to prevent lag
+  const [localCuadre, setLocalCuadre] = useState<Partial<CuadreDiario>>({});
 
   // Obtener la fecha de los query params
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -96,6 +104,17 @@ export default function CuadreWizard() {
         setUser(userData);
         setPuntoVenta(puntoVentaData || null);
 
+        const { data: ultimosCuadresEnviados } = await supabase
+          .from('cuadres_diarios')
+          .select('consignacion_pendiente,fecha')
+          .eq('punto_de_venta_id', userData.punto_de_venta_id)
+          .lt('fecha', fechaSeleccionada)
+          .not('url_foto_consignacion', 'is', null)
+          .order('fecha', { ascending: false })
+          .limit(1);
+
+        const pendienteArrastre = Number(ultimosCuadresEnviados?.[0]?.consignacion_pendiente || 0);
+
         // Consulta simplificada sin relaciones anidadas
         const { data: existingCuadre, error: cuadreError } = await supabase
           .from('cuadres_diarios')
@@ -114,14 +133,27 @@ export default function CuadreWizard() {
           ]);
 
           // Combinamos los datos
+          const shouldApplyPendienteArrastre =
+            (existingCuadre.estado === 'borrador' || existingCuadre.estado === 'pendiente') &&
+            Number(existingCuadre.consignacion_pendiente || 0) === 0 &&
+            pendienteArrastre > 0;
+
           const cuadreCompleto = {
             ...existingCuadre,
+            consignacion_pendiente: shouldApplyPendienteArrastre ? pendienteArrastre : existingCuadre.consignacion_pendiente,
             denominaciones_cuadre: denominacionesRes.data,
             gastos_diarios: gastosRes.data,
             pagos_turneros: turnerosRes.data,
           };
 
           setCuadre(cuadreCompleto);
+          setLocalCuadre(cuadreCompleto);
+          if (shouldApplyPendienteArrastre) {
+            await supabase
+              .from('cuadres_diarios')
+              .update({ consignacion_pendiente: pendienteArrastre, updated_at: new Date().toISOString() })
+              .eq('id', existingCuadre.id);
+          }
           if (cuadreCompleto.denominaciones_cuadre) {
             const existingDens = cuadreCompleto.denominaciones_cuadre;
             setDenominaciones(
@@ -139,34 +171,33 @@ export default function CuadreWizard() {
           toast.error('Error al buscar el cuadre: ' + cuadreError.message);
         } else {
           // No hay cuadre, lo creamos
-          console.log('Datos para crear cuadre:', {
+          const newCuadreData = {
             punto_de_venta_id: userData.punto_de_venta_id,
             usuario_id: userData.id,
             fecha: fechaSeleccionada,
-          });
+            estado: 'borrador',
+            recaudo: 0,
+            venta_tarjetas: 0,
+            venta_fiesta: 0,
+            venta_confiteria: 0,
+            recibos: 0,
+            venta_cajero_auto: 0,
+            tar_inicial: 0,
+            tar_consumo: 0,
+            tar_fiestas: 0,
+            tar_malas: 0,
+            tar_final: 0,
+            total_fisico: 0,
+            total_sistema: 0,
+            sobrante: 0,
+            faltante: 0,
+            consignacion_pendiente: pendienteArrastre,
+            valor_consignado: 0,
+          };
           
           const { data: newCuadre, error: insertError } = await supabase
             .from('cuadres_diarios')
-            .insert({
-              punto_de_venta_id: userData.punto_de_venta_id,
-              usuario_id: userData.id,
-              fecha: fechaSeleccionada,
-              estado: 'borrador',
-              recaudo: 0,
-              venta_tarjetas: 0,
-              venta_fiesta: 0,
-              recibos: 0,
-              venta_cajero_auto: 0,
-              tar_inicial: 0,
-              tar_consumo: 0,
-              tar_fiestas: 0,
-              tar_malas: 0,
-              tar_final: 0,
-              total_fisico: 0,
-              total_sistema: 0,
-              sobrante: 0,
-              faltante: 0,
-            })
+            .insert(newCuadreData)
             .select()
             .single();
 
@@ -175,8 +206,8 @@ export default function CuadreWizard() {
             toast.error('Error al crear el cuadre: ' + insertError.message);
             return;
           }
-          console.log('Cuadre creado exitosamente:', newCuadre);
           setCuadre(newCuadre);
+          setLocalCuadre(newCuadre);
         }
       } catch (error) {
         console.error('Error en la inicialización:', error);
@@ -193,27 +224,51 @@ export default function CuadreWizard() {
     if (!cuadre?.id) return;
     setSaving(true);
     try {
-      console.log('💾 Debug saveCuadre:');
-      console.log('  - ID del cuadre:', cuadre.id);
-      console.log('  - Updates:', updates);
-      
+      // Lista de campos que realmente existen en la tabla cuadres_diarios (conocidos)
+      const allowedFields = [
+        'punto_de_venta_id', 'usuario_id', 'fecha', 'estado',
+        'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'venta_confiteria',
+        'tar_inicial', 'tar_consumo', 'tar_fiestas', 'tar_malas', 'tar_final',
+        'total_fisico', 'total_sistema', 'sobrante', 'faltante',
+        'url_foto_consignacion', 'firma_cajero_url', 'observaciones',
+        'fecha_envio', 'fecha_aprobacion', 'observacion_superadmin',
+        'consignacion_pendiente', 'valor_consignado'
+      ];
+
+      // Filtrar solo los campos permitidos
+      const cleanUpdates: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if ((updates as any)[key] !== undefined) {
+          cleanUpdates[key] = (updates as any)[key];
+        }
+      }
+
       const { data, error } = await supabase
         .from('cuadres_diarios')
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update({ ...cleanUpdates, updated_at: new Date().toISOString() })
         .eq('id', cuadre.id)
         .select()
         .single();
       
       if (error) {
-        console.error('❌ Error en saveCuadre (Supabase):', error);
         throw error;
       }
+
+      // Combinar la data guardada con las relaciones (denominaciones, gastos, etc.) que teníamos antes
+      const updatedCuadre = {
+        ...data,
+        denominaciones_cuadre: cuadre.denominaciones_cuadre,
+        gastos_diarios: cuadre.gastos_diarios,
+        pagos_turneros: cuadre.pagos_turneros,
+        punto_de_venta: cuadre.punto_de_venta,
+        usuario: cuadre.usuario,
+      };
       
-      console.log('✅ Cuadre guardado correctamente:', data);
-      setCuadre(data);
+      setCuadre(updatedCuadre);
+      setLocalCuadre(updatedCuadre);
     } catch (error) {
-      console.error('❌ Error en saveCuadre:', error);
-      toast.error('Error al guardar');
+        console.error('Error en saveCuadre:', error);
+        toast.error('Error al guardar');
     } finally {
       setSaving(false);
     }
@@ -240,11 +295,12 @@ export default function CuadreWizard() {
 
   const totalFisico = denominaciones.reduce((sum, d) => sum + d.denominacion * d.cantidad, 0);
   
-  // Total Ventas por medio (solo para información)
+  // Total Ventas por Medio (solo para información)
   const totalVentasMedio =
-    (cuadre?.venta_tarjetas || 0) +
-    (cuadre?.venta_fiesta || 0) +
-    (cuadre?.venta_cajero_auto || 0);
+    (localCuadre?.venta_tarjetas || 0) +
+    (localCuadre?.venta_fiesta || 0) +
+    (localCuadre?.venta_cajero_auto || 0) +
+    (localCuadre?.venta_confiteria || 0);
   
   // Total Gastos y Turneros
   const totalGastos = gastos.reduce((sum, g) => sum + g.valor, 0);
@@ -252,20 +308,23 @@ export default function CuadreWizard() {
   const totalDeducciones = totalGastos + totalTurneros;
   
   // Venta Sistema - Venta Datafono - deducciones = total que debe haber en efectivo
-  const ventaSistema = (cuadre?.recaudo || 0); // Este es el valor Venta Sistema
-  const ventaDatafono = (cuadre?.venta_tarjetas || 0);
+  const ventaSistema = (localCuadre?.recaudo || 0);
+  const ventaDatafono = (localCuadre?.venta_tarjetas || 0);
   const totalEfectivoEsperado = ventaSistema - ventaDatafono - totalDeducciones;
+  const totalEfectivoConPendiente = totalEfectivoEsperado + (localCuadre?.consignacion_pendiente || 0);
   
-  const sobrante = Math.max(0, totalFisico - totalEfectivoEsperado);
-  const faltante = Math.max(0, totalEfectivoEsperado - totalFisico);
+  const sobrante = Math.max(0, totalFisico - totalEfectivoConPendiente);
+  const faltante = Math.max(0, totalEfectivoConPendiente - totalFisico);
 
   const tarFinal =
-    (cuadre?.tar_inicial || 0) -
-    (cuadre?.tar_consumo || 0) -
-    (cuadre?.tar_fiestas || 0) -
-    (cuadre?.tar_malas || 0);
+    (localCuadre?.tar_inicial || 0) -
+    (localCuadre?.tar_consumo || 0) -
+    (localCuadre?.tar_fiestas || 0) -
+    (localCuadre?.tar_malas || 0);
 
   const nextStep = async () => {
+    // Save local state to database before moving to next step
+    await saveCuadre(localCuadre);
     if (step === 5) await saveDenominaciones();
     if (step < 7) setStep(step + 1);
   };
@@ -278,39 +337,59 @@ export default function CuadreWizard() {
     if (!cuadre?.id) return;
     setSaving(true);
     try {
-      console.log('🔍 Debug enviarCuadre:');
-      console.log('  - Estado actual:', cuadre.estado);
-      console.log('  - URL foto consignación:', cuadre.url_foto_consignacion);
-      
       await saveDenominaciones();
       
       // Si tiene foto de consignación, marcar como enviado. Si no, como pendiente.
       const nuevoEstado = cuadre.url_foto_consignacion ? 'enviado' : 'pendiente';
-      console.log('  - Nuevo estado a guardar:', nuevoEstado);
       
       const updates = {
+        ...localCuadre,
         total_fisico: totalFisico,
-        total_sistema: totalEfectivoEsperado, // El total esperado después de deducciones
+        total_sistema: totalEfectivoEsperado,
         sobrante,
         faltante,
         tar_final: tarFinal,
         estado: nuevoEstado as 'enviado' | 'pendiente',
         fecha_envio: new Date().toISOString(),
+        ...(nuevoEstado === 'enviado'
+          ? {
+              valor_consignado: Number(valorConsignadoInput) || 0,
+              consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
+            }
+          : {}),
       };
-      
-      console.log('  - Datos a actualizar:', updates);
       
       await saveCuadre(updates);
       
-      toast.success(nuevoEstado === 'enviado' ? 'Cuadre enviado exitosamente' : 'Cuadre guardado como pendiente (falta foto de consignación)');
+      toast.success(nuevoEstado === 'enviado' ? 'Cuadre enviado exitosamente' : 'Cuadre guardado como Pendiente (falta foto de consignación)');
       router.push('/admin');
     } catch (error: unknown) {
-      console.error('❌ Error en enviarCuadre:', error);
+      console.error('Error en enviarCuadre:', error);
       const err = error as SupabaseError;
       toast.error(err.message || 'Error al enviar el cuadre');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleFotoConsignacionUpload = async (url: string) => {
+    // First, save the URL
+    await saveCuadre({ url_foto_consignacion: url });
+    // Then show the modal to confirm consignacion details
+    setShowConsignacionModal(true);
+    // Calculate the expected consignacion value (pendiente anterior + total de hoy)
+    const valorEsperado = totalEfectivoConPendiente;
+    setValorConsignadoInput(valorEsperado);
+    setConsignacionCompleta(true);
+  };
+
+  const handleConfirmConsignacion = () => {
+    const valorConsignado = Number(valorConsignadoInput) || 0;
+    const valorEsperado = totalEfectivoConPendiente;
+    const nuevoPendiente = Math.max(0, valorEsperado - valorConsignado);
+    setNuevoPendienteConsignacion(nuevoPendiente);
+    setShowConsignacionModal(false);
+    setReadyToSend(true);
   };
 
   const handleAddGasto = async () => {
@@ -320,7 +399,7 @@ export default function CuadreWizard() {
       .insert({
         cuadre_id: cuadre.id,
         descripcion: newGasto.descripcion,
-        categoria: newGasto.categoria || 'general',
+        categoria: newGasto.categoria || 'Otros',
         valor: newGasto.valor,
         url_foto_factura: newGasto.url_foto_factura,
         fecha: cuadre.fecha,
@@ -445,8 +524,8 @@ export default function CuadreWizard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
                 <textarea
-                  value={cuadre?.observaciones || ''}
-                  onChange={(e) => saveCuadre({ observaciones: e.target.value })}
+                  value={localCuadre?.observaciones || ''}
+                  onChange={(e) => setLocalCuadre({ ...localCuadre, observaciones: e.target.value })}
                   rows={4}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
@@ -461,14 +540,23 @@ export default function CuadreWizard() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valor Total Ventas del Día</label>
                 <input
                   type="number"
-                  value={cuadre?.recaudo || 0}
-                  onChange={(e) => saveCuadre({ recaudo: Number(e.target.value) || 0 })}
+                  value={localCuadre?.recaudo === 0 ? '' : localCuadre?.recaudo}
+                  onChange={(e) => setLocalCuadre({ ...localCuadre, recaudo: Number(e.target.value) || 0 })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor Consignación Pendiente (días anteriores)</label>
+                <input
+                  type="number"
+                  value={localCuadre?.consignacion_pendiente === 0 ? '' : localCuadre?.consignacion_pendiente}
+                  onChange={(e) => setLocalCuadre({ ...localCuadre, consignacion_pendiente: Number(e.target.value) || 0 })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div className="p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-700">Venta Sistema Total</p>
-                <p className="text-2xl font-bold text-blue-700">{formatCOP(cuadre?.recaudo || 0)}</p>
+                <p className="text-2xl font-bold text-blue-700">{formatCOP(localCuadre?.recaudo || 0)}</p>
               </div>
             </div>
           )}
@@ -479,14 +567,15 @@ export default function CuadreWizard() {
               {[
                 { label: 'Venta Datafono', key: 'venta_tarjetas' },
                 { label: 'Venta Fiesta', key: 'venta_fiesta' },
+                { label: 'Venta Confitería', key: 'venta_confiteria' },
                 { label: 'Venta Cajero Automático', key: 'venta_cajero_auto' },
               ].map((field) => (
                 <div key={field.key}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
                   <input
                     type="number"
-                    value={(cuadre?.[field.key as keyof CuadreDiario] as number) || 0}
-                    onChange={(e) => saveCuadre({ [field.key]: Number(e.target.value) || 0 })}
+                    value={(localCuadre?.[field.key as keyof CuadreDiario] as number) === 0 ? '' : (localCuadre?.[field.key as keyof CuadreDiario] as number)}
+                    onChange={(e) => setLocalCuadre({ ...localCuadre, [field.key]: Number(e.target.value) || 0 })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -589,8 +678,8 @@ export default function CuadreWizard() {
                 <p className="text-2xl font-bold text-blue-700">{formatCOP(totalDeducciones)}</p>
               </div>
               <div className="p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-700">Total Efectivo a Consignar (Venta Sistema - Venta Datafono - Deducciones)</p>
-                <p className="text-2xl font-bold text-green-700">{formatCOP(totalEfectivoEsperado)}</p>
+                <p className="text-sm text-green-700">Total Efectivo a Consignar (Venta Sistema - Tarjetas - Deducciones + Pendiente)</p>
+                <p className="text-2xl font-bold text-green-700">{formatCOP(totalEfectivoConPendiente)}</p>
               </div>
             </div>
           )}
@@ -629,14 +718,26 @@ export default function CuadreWizard() {
                   </tbody>
                 </table>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-700">Total Físico</p>
-                  <p className="text-xl font-bold text-blue-700">{formatCOP(totalFisico)}</p>
+              <div className="mt-6 space-y-3">
+                <div className="p-4 bg-orange-200 rounded-lg border border-orange-300">
+                  <p className="text-sm text-orange-900 font-bold">Total General a Consignar</p>
+                  <p className="text-3xl font-bold text-orange-900">{formatCOP(totalEfectivoConPendiente)}</p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-700">Total Esperado</p>
-                  <p className="text-xl font-bold text-gray-700">{formatCOP(totalEfectivoEsperado)}</p>
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <p className="text-sm text-green-700">Valor a Consignar Hoy</p>
+                  <p className="text-xl font-bold text-green-700">{formatCOP(totalEfectivoEsperado)}</p>
+                </div>
+                {(localCuadre?.consignacion_pendiente || 0) > 0 && (
+                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-sm text-orange-800 font-medium">Pendiente al Iniciar (Días Anteriores)</p>
+                    <p className="text-2xl font-bold text-orange-800">{formatCOP(localCuadre?.consignacion_pendiente || 0)}</p>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-700">Total Físico Contado</p>
+                  <p className="text-xl font-bold text-blue-700">{formatCOP(totalFisico)}</p>
                 </div>
                 <div className={`p-4 rounded-lg ${sobrante > 0 ? 'bg-green-50' : faltante > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${sobrante > 0 ? 'text-green-700' : faltante > 0 ? 'text-red-700' : 'text-gray-700'}`}>
@@ -663,8 +764,8 @@ export default function CuadreWizard() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
                   <input
                     type="number"
-                    value={(cuadre?.[field.key as keyof CuadreDiario] as number) || 0}
-                    onChange={(e) => saveCuadre({ [field.key]: Number(e.target.value) || 0 })}
+                    value={(localCuadre?.[field.key as keyof CuadreDiario] as number) === 0 ? '' : (localCuadre?.[field.key as keyof CuadreDiario] as number)}
+                    onChange={(e) => setLocalCuadre({ ...localCuadre, [field.key]: Number(e.target.value) || 0 })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -699,9 +800,27 @@ export default function CuadreWizard() {
                 <UploadFoto
                   bucket="soportes"
                   currentUrl={cuadre?.url_foto_consignacion}
-                  onUpload={(url) => saveCuadre({ url_foto_consignacion: url })}
-                  onRemove={() => saveCuadre({ url_foto_consignacion: undefined })}
+                  onUpload={handleFotoConsignacionUpload}
+                  onRemove={() => {
+                    saveCuadre({ url_foto_consignacion: undefined });
+                    setReadyToSend(false);
+                    setNuevoPendienteConsignacion(null);
+                    setValorConsignadoInput('');
+                  }}
                 />
+                {cuadre?.url_foto_consignacion && (
+                  <button
+                    onClick={() => {
+                      setShowConsignacionModal(true);
+                      if (valorConsignadoInput === '') {
+                        setValorConsignadoInput(totalEfectivoConPendiente);
+                      }
+                    }}
+                    className="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  >
+                    Editar Confirmación de Consignación
+                  </button>
+                )}
               </div>
               
               <div>
@@ -713,15 +832,40 @@ export default function CuadreWizard() {
                   onClear={() => saveCuadre({ firma_cajero_url: undefined })}
                 />
               </div>
+
+              {cuadre?.url_foto_consignacion && (readyToSend || valorConsignadoInput !== '') && (
+                <div className="p-4 bg-white rounded-lg border border-gray-200">
+                  <div className="flex justify-between font-semibold text-lg">
+                    <span className="text-gray-700">Valor Consignado</span>
+                    <span className="text-gray-900">{formatCOP(Number(valorConsignadoInput) || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-lg mt-2">
+                    <span className="text-orange-700">Pendiente Próximo Cuadre</span>
+                    <span className="text-orange-800">
+                      {formatCOP(
+                        nuevoPendienteConsignacion ?? Math.max(0, totalEfectivoConPendiente - (Number(valorConsignadoInput) || 0))
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm text-gray-600">Total Físico</p>
-                  <p className="text-xl font-bold">{formatCOP(totalFisico)}</p>
+                  <p className="text-sm text-gray-600">Total General a Consignar</p>
+                  <p className="text-xl font-bold">{formatCOP(totalEfectivoConPendiente)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Total Esperado</p>
+                  <p className="text-sm text-gray-600">Valor a Consignar Hoy</p>
                   <p className="text-xl font-bold">{formatCOP(totalEfectivoEsperado)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Pendiente al Iniciar</p>
+                  <p className="text-xl font-bold">{formatCOP(localCuadre?.consignacion_pendiente || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Total Físico Contado</p>
+                  <p className="text-xl font-bold">{formatCOP(totalFisico)}</p>
                 </div>
                 <div className={`${sobrante > 0 ? 'text-success' : faltante > 0 ? 'text-danger' : ''}`}>
                   <p className="text-sm">
@@ -739,7 +883,7 @@ export default function CuadreWizard() {
               
               <button
                 onClick={enviarCuadre}
-                disabled={saving || !cuadre?.firma_cajero_url}
+                disabled={saving || !cuadre?.firma_cajero_url || (!!cuadre?.url_foto_consignacion && !readyToSend)}
                 className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${cuadre?.url_foto_consignacion ? 'bg-success text-white' : 'bg-warning text-white'}`}
               >
                 {saving ? (
@@ -795,7 +939,7 @@ export default function CuadreWizard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
                 <select
-                  value={newGasto.categoria || 'general'}
+                  value={newGasto.categoria || 'Otros'}
                   onChange={(e) => setNewGasto({ ...newGasto, categoria: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                 >
@@ -895,6 +1039,77 @@ export default function CuadreWizard() {
                 className="px-4 py-2 bg-primary text-white rounded-lg"
               >
                 Agregar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConsignacionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4">Confirmar Consignación</h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  id="consignacionCompleta"
+                  name="consignacion"
+                  checked={consignacionCompleta}
+                  onChange={() => {
+                    setConsignacionCompleta(true);
+                    const valorEsperado = totalEfectivoConPendiente;
+                    setValorConsignadoInput(valorEsperado);
+                  }}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="consignacionCompleta" className="text-sm font-medium text-gray-700">Consignación Completa</label>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="radio"
+                  id="consignacionParcial"
+                  name="consignacion"
+                  checked={!consignacionCompleta}
+                  onChange={() => setConsignacionCompleta(false)}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="consignacionParcial" className="text-sm font-medium text-gray-700">Consignación Parcial</label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor Consignado</label>
+                <input
+                  type="number"
+                  value={valorConsignadoInput}
+                  onChange={(e) => setValorConsignadoInput(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total General a Consignar</span>
+                  <span className="font-semibold">{formatCOP(totalEfectivoConPendiente)}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-2">
+                  <span className="text-orange-700 font-medium">Queda Pendiente</span>
+                  <span className="font-semibold text-orange-800">
+                    {formatCOP(Math.max(0, totalEfectivoConPendiente - (Number(valorConsignadoInput) || 0)))}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowConsignacionModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmConsignacion}
+                className="px-4 py-2 bg-primary text-white rounded-lg"
+              >
+                Confirmar
               </button>
             </div>
           </div>
