@@ -24,6 +24,9 @@ export default function RootLayout({
       lang="es-CO"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+      </head>
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster position="top-right" />
