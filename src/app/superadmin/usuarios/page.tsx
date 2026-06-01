@@ -59,19 +59,26 @@ export default function UsuariosPage() {
         if (error) throw error;
         toast.success('Usuario actualizado');
       } else {
-        // Generar un ID temporal (se actualizará cuando el usuario se registre)
-        const tempId = crypto.randomUUID();
-        
-        const { error } = await supabase.from('usuarios').insert({
-          id: tempId,
-          nombre: newUser.nombre,
-          email: newUser.email,
-          rol: newUser.rol,
-          punto_de_venta_id: newUser.punto_de_venta_id || null,
-          activo: true,
+        // Llamar a la API para crear el usuario (usa service role key en el servidor)
+        const response = await fetch('/api/crear-usuario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: newUser.nombre,
+            email: newUser.email,
+            password: newUser.password,
+            rol: newUser.rol,
+            punto_de_venta_id: newUser.punto_de_venta_id || null,
+          }),
         });
-        if (error) throw error;
-        toast.success('Usuario creado exitosamente. Ahora el usuario debe usar la opción "Olvidé mi contraseña" en el login para establecer su contraseña.');
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Error al crear usuario');
+        }
+
+        toast.success('Usuario creado exitosamente. Puede iniciar sesión con la contraseña establecida.');
       }
 
       const [usuariosRes, pdvRes] = await Promise.all([
