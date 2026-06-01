@@ -196,17 +196,28 @@ export default function CuadreWizard() {
             consigna_hoy: true,
           };
           
-          const { data: newCuadre, error: insertError } = await supabase
-            .from('cuadres_diarios')
-            .insert(newCuadreData)
-            .select()
-            .single();
+          const doInsert = async (payload: Record<string, any>) => {
+            const { data, error } = await supabase.from('cuadres_diarios').insert(payload).select().single();
+            if (error) throw error;
+            return data;
+          };
 
-          if (insertError) {
-            console.error('Error al crear el cuadre:', insertError);
-            toast.error('Error al crear el cuadre: ' + insertError.message);
-            return;
+          let newCuadre: any;
+          try {
+            newCuadre = await doInsert(newCuadreData as any);
+          } catch (e: any) {
+            const msg = String(e?.message || '');
+            const match = msg.match(/Could not find the '([^']+)' column/i);
+            const missingColumn = match?.[1];
+            if (e?.code === 'PGRST204' && missingColumn && missingColumn in (newCuadreData as any)) {
+              const retryData = { ...(newCuadreData as any) };
+              delete retryData[missingColumn];
+              newCuadre = await doInsert(retryData);
+            } else {
+              throw e;
+            }
           }
+
           setCuadre(newCuadre);
           setLocalCuadre(newCuadre);
         }
@@ -244,15 +255,31 @@ export default function CuadreWizard() {
         }
       }
 
-      const { data, error } = await supabase
-        .from('cuadres_diarios')
-        .update({ ...cleanUpdates, updated_at: new Date().toISOString() })
-        .eq('id', cuadre.id)
-        .select()
-        .single();
-      
-      if (error) {
-        throw error;
+      const doUpdate = async (payload: Record<string, any>) => {
+        const { data, error } = await supabase
+          .from('cuadres_diarios')
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq('id', cuadre.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      };
+
+      let data: any;
+      try {
+        data = await doUpdate(cleanUpdates);
+      } catch (e: any) {
+        const msg = String(e?.message || '');
+        const match = msg.match(/Could not find the '([^']+)' column/i);
+        const missingColumn = match?.[1];
+        if (e?.code === 'PGRST204' && missingColumn && missingColumn in cleanUpdates) {
+          const retryUpdates = { ...cleanUpdates };
+          delete retryUpdates[missingColumn];
+          data = await doUpdate(retryUpdates);
+        } else {
+          throw e;
+        }
       }
 
       // Combinar la data guardada con las relaciones (denominaciones, gastos, etc.) que teníamos antes
@@ -268,8 +295,8 @@ export default function CuadreWizard() {
       setCuadre(updatedCuadre);
       setLocalCuadre(updatedCuadre);
     } catch (error) {
-        console.error('Error en saveCuadre:', error);
-        toast.error('Error al guardar');
+      console.error('Error en saveCuadre:', error);
+      toast.error('Error al guardar');
     } finally {
       setSaving(false);
     }
