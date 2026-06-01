@@ -59,15 +59,11 @@ export default function UsuariosPage() {
         if (error) throw error;
         toast.success('Usuario actualizado');
       } else {
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: newUser.email,
-          password: newUser.password,
-          email_confirm: true,
-        });
-        if (authError) throw authError;
-
+        // Generar un ID temporal (se actualizará cuando el usuario se registre)
+        const tempId = crypto.randomUUID();
+        
         const { error } = await supabase.from('usuarios').insert({
-          id: authData.user?.id,
+          id: tempId,
           nombre: newUser.nombre,
           email: newUser.email,
           rol: newUser.rol,
@@ -75,7 +71,7 @@ export default function UsuariosPage() {
           activo: true,
         });
         if (error) throw error;
-        toast.success('Usuario creado');
+        toast.success('Usuario creado exitosamente. El usuario debe registrarse usando el mismo email.');
       }
 
       const [usuariosRes, pdvRes] = await Promise.all([

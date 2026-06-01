@@ -45,15 +45,42 @@ function LoginContent() {
       }
       if (!session) throw new Error('No se pudo establecer sesión. Intenta de nuevo.');
 
-      const { data: userData, error: userError } = await supabase
+      // Buscar usuario por email (puede tener ID temporal)
+      const { data: userByEmail, error: emailError } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('email', normalizedEmail)
         .single();
       
-      if (userError) {
-        console.error('Error al buscar usuario:', userError);
-        throw new Error('No se pudo validar el usuario en el sistema');
+      let userData = userByEmail;
+      
+      // Si el usuario existe pero tiene ID diferente, actualizar el ID
+      if (userByEmail && userByEmail.id !== session.user.id) {
+        const { error: updateError } = await supabase
+          .from('usuarios')
+          .update({ id: session.user.id })
+          .eq('id', userByEmail.id);
+        
+        if (updateError) {
+          console.error('Error al actualizar ID de usuario:', updateError);
+        } else {
+          userData = { ...userByEmail, id: session.user.id };
+        }
+      }
+      
+      // Si no se encontró el usuario por email, buscar por ID
+      if (!userData) {
+        const { data: userById, error: idError } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        userData = userById;
+      }
+      
+      if (!userData) {
+        throw new Error('No se encontró tu usuario en el sistema. Contacta al administrador.');
       }
 
       if (!userData?.activo) {
@@ -148,6 +175,18 @@ function LoginContent() {
             )}
           </button>
         </form>
+
+        <div className="text-center">
+          <p className="text-gray-600 text-sm">
+            ¿No tienes cuenta?{' '}
+            <button
+              onClick={() => router.push('/registro')}
+              className="text-primary font-medium hover:underline"
+            >
+              Regístrate aquí
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );
