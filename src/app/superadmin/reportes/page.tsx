@@ -405,21 +405,21 @@ export default function SuperadminReportesPage() {
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px]">
+            <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Punto de Venta</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor a Consignar</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell">Venta Datafono</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell">Valor Consignado</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell">Gastos</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell">Turneros</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell">Pendiente</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell">Total Físico</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell">Diferencia</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Valor a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[140px] whitespace-nowrap">Datafono</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Pendiente</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Gastos</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Turneros</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Total Físico</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[120px] whitespace-nowrap">Diferencia</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -432,17 +432,17 @@ export default function SuperadminReportesPage() {
                 ) : (
                   cuadresFiltrados.map((cuadre) => (
                     <tr key={cuadre.id} className="hover:bg-gray-50">
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.total_sistema)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden xl:table-cell">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden xl:table-cell">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
-                      <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden 2xl:table-cell ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.total_sistema)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
+                      <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
                         {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
                       </td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
@@ -459,18 +459,18 @@ export default function SuperadminReportesPage() {
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Consolidado Mensual</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[780px]">
+            <table className="w-full min-w-[680px] table-fixed">
               <thead className="bg-light">
                 <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Mes</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Punto de Venta</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor a Consignar</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell">Venta Datafono</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell">Valor Consignado</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell">Gastos</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell">Turneros</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Fin de Mes</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Mes</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Valor a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Pendiente Fin</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Datafono</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Gastos</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Turneros</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -483,15 +483,15 @@ export default function SuperadminReportesPage() {
                 ) : (
                   consolidadoMensual.map((row) => (
                     <tr key={`${row.pdvId}|${row.mes}`} className="hover:bg-gray-50">
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{row.mes}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{row.pdv}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(row.ventaTotal)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(row.valorAConsignar)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden lg:table-cell">{formatCOP(row.ventaDatafono)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden lg:table-cell">{formatCOP(row.valorConsignado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden lg:table-cell">{formatCOP(row.gastos)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden lg:table-cell">{formatCOP(row.turneros)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(row.pendienteFinMes)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium whitespace-nowrap">{row.mes}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm truncate">{row.pdv}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.ventaTotal)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.valorAConsignar)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.pendienteFinMes)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.ventaDatafono)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.valorConsignado)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.gastos)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.turneros)}</td>
                     </tr>
                   ))
                 )}
