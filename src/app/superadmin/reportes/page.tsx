@@ -245,7 +245,7 @@ export default function SuperadminReportesPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-company relative">
+    <div className="flex min-h-screen bg-company relative overflow-x-hidden">
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)}></div>
       )}
@@ -296,7 +296,7 @@ export default function SuperadminReportesPage() {
         </div>
       </aside>
 
-      <main className="flex-1">
+      <main className="flex-1 min-w-0">
         <div className="sticky top-0 z-30 bg-black/20 backdrop-blur-sm border-b border-white/10 p-4 md:p-0">
           <div className="flex items-center justify-between md:hidden mb-4">
             <button onClick={() => setSidebarOpen(true)} className="text-white p-2 rounded-lg bg-white/10 hover:bg-white/20">
@@ -314,7 +314,7 @@ export default function SuperadminReportesPage() {
           </div>
         </div>
 
-        <div className="p-4 md:p-6">
+        <div className="p-4 md:p-6 max-w-full">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
             <div className="flex-1">
               <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow">Reportes Generales</h1>
@@ -400,11 +400,11 @@ export default function SuperadminReportesPage() {
           </div>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-white/30">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-white/30 max-w-full">
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-w-full">
             <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
@@ -454,11 +454,11 @@ export default function SuperadminReportesPage() {
           </div>
         </div>
 
-        <div className="mt-6 bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-white/30">
+        <div className="mt-6 bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-white/30 max-w-full">
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Consolidado Mensual</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-w-full">
             <table className="w-full min-w-[680px] table-fixed">
               <thead className="bg-light">
                 <tr>
