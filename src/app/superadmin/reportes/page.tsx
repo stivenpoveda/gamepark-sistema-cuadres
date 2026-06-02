@@ -36,7 +36,6 @@ export default function SuperadminReportesPage() {
         punto_de_venta: pdvRes.data?.find(p => p.id === cuadre.punto_de_venta_id),
       })) || [];
 
-      console.log('✅ Cuadres cargados del superadmin:', cuadresWithData);
       setCuadres(cuadresWithData);
       setPuntosVenta(pdvRes.data || []);
 
@@ -251,9 +250,9 @@ export default function SuperadminReportesPage() {
       )}
 
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-64 text-white flex-shrink-0 transform transition-transform duration-300 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        className={`inset-y-0 left-0 z-50 w-64 text-white flex-shrink-0 transform transition-transform duration-300 ${
+          sidebarOpen ? 'fixed translate-x-0' : 'hidden'
+        } md:static md:block md:translate-x-0`}
       >
         <div className="h-full bg-black/30 backdrop-blur-md border-r border-white/20 flex flex-col">
           <div className="p-6 border-b border-white/20 relative">
