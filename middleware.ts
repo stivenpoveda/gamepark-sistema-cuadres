@@ -68,7 +68,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith('/admin') && (profile.rol === 'superadmin' || profile.rol === 'superadministrador')) {
+  const isSuperRole = profile.rol === 'superadmin' || profile.rol === 'superadministrador';
+  const isAdminCuadreDetalle =
+    pathname.startsWith('/admin/cuadre/') && !pathname.startsWith('/admin/cuadre/nuevo');
+
+  if (pathname.startsWith('/admin') && isSuperRole && !isAdminCuadreDetalle) {
     const url = req.nextUrl.clone();
     url.pathname = '/superadmin';
     url.search = '';
