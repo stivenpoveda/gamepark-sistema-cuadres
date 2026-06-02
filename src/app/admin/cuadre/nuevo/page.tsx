@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate, getTodayString } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta, DenominacionCuadre, GastoDiario, PagoTurnero, SupabaseError } from '@/types';
@@ -321,7 +321,7 @@ export default function CuadreWizard() {
   };
 
   const totalFisico = denominaciones.reduce((sum, d) => sum + d.denominacion * d.cantidad, 0);
-  
+
   // Total Ventas por Medio (solo para información)
   const totalVentasMedio =
     (localCuadre?.venta_tarjetas || 0) +
@@ -329,19 +329,25 @@ export default function CuadreWizard() {
     (localCuadre?.venta_cajero_auto || 0) +
     (localCuadre?.venta_confiteria || 0);
   
-  // Total Gastos y Turneros
-  const totalGastos = gastos.reduce((sum, g) => sum + g.valor, 0);
-  const totalTurneros = turneros.reduce((sum, t) => sum + t.valor, 0);
-  const totalDeducciones = totalGastos + totalTurneros;
-  
-  // Venta Sistema - Venta Datafono - deducciones = total que debe haber en efectivo
-  const ventaSistema = (localCuadre?.recaudo || 0);
-  const ventaDatafono = (localCuadre?.venta_tarjetas || 0);
-  const totalEfectivoEsperado = ventaSistema - ventaDatafono - totalDeducciones;
-  const totalEfectivoConPendiente = totalEfectivoEsperado + (localCuadre?.consignacion_pendiente || 0);
-  
-  const sobrante = Math.max(0, totalFisico - totalEfectivoConPendiente);
-  const faltante = Math.max(0, totalEfectivoConPendiente - totalFisico);
+  const cuadreMetrics = calcCuadreMetrics({
+    context: 'draft',
+    recaudo: localCuadre?.recaudo,
+    venta_tarjetas: localCuadre?.venta_tarjetas,
+    consignacion_pendiente: localCuadre?.consignacion_pendiente,
+    gastos,
+    turneros,
+    total_fisico: totalFisico,
+  });
+
+  const totalGastos = cuadreMetrics.totalGastos;
+  const totalTurneros = cuadreMetrics.totalTurneros;
+  const totalDeducciones = cuadreMetrics.totalDeducciones;
+  const ventaSistema = cuadreMetrics.ventaSistema;
+  const ventaDatafono = cuadreMetrics.ventaDatafono;
+  const totalEfectivoEsperado = cuadreMetrics.totalEfectivoEsperado;
+  const totalEfectivoConPendiente = cuadreMetrics.totalGeneralAConsignar;
+  const sobrante = cuadreMetrics.sobrante;
+  const faltante = cuadreMetrics.faltante;
 
   const tarFinal =
     (localCuadre?.tar_inicial || 0) -

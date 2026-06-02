@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import type { CuadreDiario, Usuario } from '@/types';
@@ -182,13 +182,24 @@ export default function CuadreDetalle() {
     }
   };
 
-  const totalGastos = cuadre.gastos_diarios?.reduce((sum, g) => sum + g.valor, 0) || 0;
-  const totalTurneros = cuadre.pagos_turneros?.reduce((sum, t) => sum + t.valor, 0) || 0;
-  const totalEfectivoEsperado = (cuadre.recaudo || 0) - (cuadre.venta_tarjetas || 0) - totalGastos - totalTurneros;
-  const totalGeneralAConsignar = cuadre.url_foto_consignacion
-    ? Number(cuadre.valor_consignado || 0) + Number(cuadre.consignacion_pendiente || 0)
-    : totalEfectivoEsperado + Number(cuadre.consignacion_pendiente || 0);
-  const pendienteInicial = Math.max(0, totalGeneralAConsignar - totalEfectivoEsperado);
+  const cuadreMetrics = calcCuadreMetrics({
+    context: 'final',
+    recaudo: cuadre.recaudo,
+    venta_tarjetas: cuadre.venta_tarjetas,
+    consignacion_pendiente: cuadre.consignacion_pendiente,
+    valor_consignado: cuadre.valor_consignado,
+    url_foto_consignacion: cuadre.url_foto_consignacion,
+    consigna_hoy: cuadre.consigna_hoy,
+    gastos: cuadre.gastos_diarios,
+    turneros: cuadre.pagos_turneros,
+    total_fisico: cuadre.total_fisico,
+  });
+
+  const totalGastos = cuadreMetrics.totalGastos;
+  const totalTurneros = cuadreMetrics.totalTurneros;
+  const totalEfectivoEsperado = cuadreMetrics.totalEfectivoEsperado;
+  const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
+  const pendienteInicial = cuadreMetrics.pendienteInicial;
 
   const exportarCuadroDiarioPDF = () => {
     const escapeHtml = (value: unknown) =>
