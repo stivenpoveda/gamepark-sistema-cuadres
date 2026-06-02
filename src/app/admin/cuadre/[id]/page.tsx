@@ -425,8 +425,8 @@ export default function CuadreDetalle() {
   </div>
 
   <div class="sign">
-    <div class="sign-box">Administrador Parque</div>
-    <div class="sign-box">Nombre</div>
+    <div class="sign-box"><div class="bold">${escapeHtml(cuadre.nombre_administradora || '')}</div>Administradora</div>
+    <div class="sign-box"><div class="bold">${escapeHtml(cuadre.cedula_administradora || '')}</div>Cédula</div>
   </div>
 </body>
 </html>`;

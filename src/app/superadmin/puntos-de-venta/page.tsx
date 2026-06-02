@@ -96,7 +96,7 @@ export default function PuntosDeVentaPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 overflow-x-hidden">
       <aside className="w-64 bg-primary text-white flex-shrink-0 hidden md:block">
         <div className="p-6">
           <h2 className="text-2xl font-bold">Game Park</h2>
@@ -116,8 +116,8 @@ export default function PuntosDeVentaPage() {
           </a>
         </nav>
       </aside>
-      <main className="flex-1 p-6">
-        <div className="flex items-center gap-4 mb-8">
+      <main className="flex-1 min-w-0 p-4 md:p-6 max-w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
           <button onClick={() => router.push('/superadmin')} className="text-primary">
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -134,8 +134,8 @@ export default function PuntosDeVentaPage() {
         </div>
 
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="overflow-x-auto max-w-full">
+            <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Nombre</th>
