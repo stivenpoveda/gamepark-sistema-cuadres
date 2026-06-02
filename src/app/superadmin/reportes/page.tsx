@@ -403,7 +403,7 @@ export default function SuperadminReportesPage() {
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres</h3>
           </div>
-          <div className="sm:hidden p-4 space-y-3">
+          <div className="lg:hidden p-4 space-y-3">
             {cuadresFiltrados.length === 0 ? (
               <div className="text-center text-gray-500 py-6">
                 No hay cuadres para mostrar en este rango de fechas.
@@ -454,7 +454,7 @@ export default function SuperadminReportesPage() {
             )}
           </div>
 
-          <div className="hidden sm:block overflow-x-auto max-w-full">
+          <div className="hidden lg:block overflow-x-auto max-w-full">
             <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
@@ -508,7 +508,7 @@ export default function SuperadminReportesPage() {
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Consolidado Mensual</h3>
           </div>
-          <div className="sm:hidden p-4 space-y-3">
+          <div className="lg:hidden p-4 space-y-3">
             {consolidadoMensual.length === 0 ? (
               <div className="text-center text-gray-500 py-6">
                 No hay datos para el consolidado mensual en este rango.
@@ -558,7 +558,7 @@ export default function SuperadminReportesPage() {
             )}
           </div>
 
-          <div className="hidden sm:block overflow-x-auto max-w-full">
+          <div className="hidden lg:block overflow-x-auto max-w-full">
             <table className="w-full min-w-[680px] table-fixed">
               <thead className="bg-light">
                 <tr>
