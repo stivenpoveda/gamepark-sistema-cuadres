@@ -40,6 +40,10 @@ body {
   min-height: 100vh;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
 .bg-company {
   background: url('/fondo-empresa.png') no-repeat center center fixed;
   background-size: cover;

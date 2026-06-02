@@ -13,6 +13,7 @@ export default function SuperadminReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [useCardsLayout, setUseCardsLayout] = useState(false);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
   const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number>>({});
@@ -20,6 +21,18 @@ export default function SuperadminReportesPage() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [pdvSeleccionado, setPdvSeleccionado] = useState<string>('');
+
+  useEffect(() => {
+    const compute = () => {
+      const isCoarsePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+      const width = typeof window !== 'undefined' ? window.innerWidth : 0;
+      setUseCardsLayout(Boolean(isCoarsePointer) || width < 1024);
+    };
+
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -403,58 +416,59 @@ export default function SuperadminReportesPage() {
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres</h3>
           </div>
-          <div className="lg:hidden p-4 space-y-3">
-            {cuadresFiltrados.length === 0 ? (
-              <div className="text-center text-gray-500 py-6">
-                No hay cuadres para mostrar en este rango de fechas.
-              </div>
-            ) : (
-              cuadresFiltrados.map((cuadre) => (
-                <div key={cuadre.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</p>
-                      <p className="text-sm text-gray-600">{formatDate(cuadre.fecha)}</p>
-                    </div>
-                    <div className="shrink-0">{getEstadoBadge(cuadre.estado)}</div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div>
-                      <p className="text-gray-600">Venta Total</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(cuadre.recaudo)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Valor a Consignar</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(cuadre.total_sistema)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Datafono</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(cuadre.venta_tarjetas)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Consignado</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(cuadre.valor_consignado)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Gastos</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Turneros</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-gray-600">Pendiente</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(cuadre.consignacion_pendiente)}</p>
-                    </div>
-                  </div>
+          {useCardsLayout ? (
+            <div className="p-4 space-y-3">
+              {cuadresFiltrados.length === 0 ? (
+                <div className="text-center text-gray-500 py-6">
+                  No hay cuadres para mostrar en este rango de fechas.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                cuadresFiltrados.map((cuadre) => (
+                  <div key={cuadre.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</p>
+                        <p className="text-sm text-gray-600">{formatDate(cuadre.fecha)}</p>
+                      </div>
+                      <div className="shrink-0">{getEstadoBadge(cuadre.estado)}</div>
+                    </div>
 
-          <div className="hidden lg:block overflow-x-auto max-w-full">
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <div>
+                        <p className="text-gray-600">Venta Total</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.recaudo)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Valor a Consignar</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.total_sistema)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Datafono</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.venta_tarjetas)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Consignado</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.valor_consignado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Gastos</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Turneros</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-gray-600">Pendiente</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.consignacion_pendiente)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-w-full">
             <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
@@ -501,64 +515,66 @@ export default function SuperadminReportesPage() {
                 )}
               </tbody>
             </table>
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden border border-white/30 max-w-full">
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Consolidado Mensual</h3>
           </div>
-          <div className="lg:hidden p-4 space-y-3">
-            {consolidadoMensual.length === 0 ? (
-              <div className="text-center text-gray-500 py-6">
-                No hay datos para el consolidado mensual en este rango.
-              </div>
-            ) : (
-              consolidadoMensual.map((row) => (
-                <div key={`${row.pdvId}|${row.mes}`} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900">{row.mes}</p>
-                      <p className="text-sm text-gray-600 truncate">{row.pdv}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-600">Pendiente Fin</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.pendienteFinMes)}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div>
-                      <p className="text-gray-600">Venta Total</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.ventaTotal)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Valor a Consignar</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.valorAConsignar)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Datafono</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.ventaDatafono)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Consignado</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.valorConsignado)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Gastos</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.gastos)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Turneros</p>
-                      <p className="font-semibold text-gray-900">{formatCOP(row.turneros)}</p>
-                    </div>
-                  </div>
+          {useCardsLayout ? (
+            <div className="p-4 space-y-3">
+              {consolidadoMensual.length === 0 ? (
+                <div className="text-center text-gray-500 py-6">
+                  No hay datos para el consolidado mensual en este rango.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                consolidadoMensual.map((row) => (
+                  <div key={`${row.pdvId}|${row.mes}`} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900">{row.mes}</p>
+                        <p className="text-sm text-gray-600 truncate">{row.pdv}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-600">Pendiente Fin</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.pendienteFinMes)}</p>
+                      </div>
+                    </div>
 
-          <div className="hidden lg:block overflow-x-auto max-w-full">
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <div>
+                        <p className="text-gray-600">Venta Total</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.ventaTotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Valor a Consignar</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.valorAConsignar)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Datafono</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.ventaDatafono)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Consignado</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.valorConsignado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Gastos</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.gastos)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Turneros</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.turneros)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-w-full">
             <table className="w-full min-w-[680px] table-fixed">
               <thead className="bg-light">
                 <tr>
@@ -597,7 +613,8 @@ export default function SuperadminReportesPage() {
                 )}
               </tbody>
             </table>
-          </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
