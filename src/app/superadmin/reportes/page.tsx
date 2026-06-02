@@ -16,8 +16,8 @@ export default function SuperadminReportesPage() {
   const [useCardsLayout, setUseCardsLayout] = useState(false);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
-  const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number>>({});
-  const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number>>({});
+  const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number> >({});
+  const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number> >({});
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [pdvSeleccionado, setPdvSeleccionado] = useState<string>('');
@@ -195,7 +195,7 @@ export default function SuperadminReportesPage() {
       turneros: number;
       pendienteFinMes: number;
       _fechaMax: string;
-    }>>((acc, c) => {
+    }> >((acc, c) => {
       const fecha = c.fecha.split('T')[0];
       const mes = fecha.slice(0, 7);
       const pdvId = c.punto_de_venta_id || 'N/A';
@@ -616,6 +616,7 @@ export default function SuperadminReportesPage() {
             </div>
           )}
         </div>
+      </div>
       </main>
     </div>
   );
