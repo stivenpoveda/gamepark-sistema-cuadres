@@ -224,7 +224,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="flex min-h-screen relative">
+    <div className="flex min-h-screen relative overflow-x-hidden">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
@@ -234,7 +234,11 @@ export default function AdminDashboard() {
       )}
       
       {/* Sidebar */}
-      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 text-white flex-shrink-0 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <aside
+        className={`inset-y-0 left-0 z-50 w-64 text-white flex-shrink-0 transform transition-transform duration-300 ${
+          sidebarOpen ? 'fixed translate-x-0' : 'hidden'
+        } md:static md:block md:translate-x-0`}
+      >
         <div className="h-full bg-black/30 backdrop-blur-md border-r border-white/20 flex flex-col">
           <div className="p-6 border-b border-white/20 relative">
             <button
@@ -279,7 +283,7 @@ export default function AdminDashboard() {
         </div>
       </aside>
       
-      <main className="flex-1">
+      <main className="flex-1 min-w-0">
         {/* Header */}
         <div className="sticky top-0 z-30 bg-black/20 backdrop-blur-sm border-b border-white/10 p-4 md:p-0">
           <div className="flex items-center justify-between md:hidden mb-4">
@@ -305,7 +309,7 @@ export default function AdminDashboard() {
         </div>
         
         {/* Content */}
-        <div className="p-4 md:p-8">
+        <div className="p-4 md:p-8 max-w-full">
 
         <div className="mb-6 bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
           <div className="flex items-center gap-3 mb-4">
@@ -384,8 +388,8 @@ export default function AdminDashboard() {
           <div className="p-4 sm:p-6 border-b border-gray-200">
             <h3 className="text-lg sm:text-xl font-semibold text-gray-800">Historial</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="overflow-x-auto max-w-full">
+            <table className="w-full min-w-[760px] table-fixed">
               <thead className="bg-light">
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
