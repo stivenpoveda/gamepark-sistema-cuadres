@@ -836,33 +836,26 @@ export default function CuadreDetalle() {
     worksheet.addRow([]);
     worksheet.addRow([]);
 
-    // Firmas
+    // Datos Administradora
     const filaFirmas = filaTotalCaja + 5;
     worksheet.mergeCells(`B${filaFirmas}:C${filaFirmas}`);
-    worksheet.getCell(`B${filaFirmas}`).value = 'Administrador Parque';
+    worksheet.getCell(`B${filaFirmas}`).value = 'Administradora';
     worksheet.getCell(`B${filaFirmas}`).font = { bold: true };
     worksheet.getCell(`B${filaFirmas}`).alignment = { horizontal: 'center' };
-    
+
     worksheet.mergeCells(`D${filaFirmas}:E${filaFirmas}`);
-    worksheet.getCell(`D${filaFirmas}`).value = 'Nombre';
+    worksheet.getCell(`D${filaFirmas}`).value = 'Cédula';
     worksheet.getCell(`D${filaFirmas}`).font = { bold: true };
     worksheet.getCell(`D${filaFirmas}`).alignment = { horizontal: 'center' };
 
-    // Líneas de firma
-    const filaFirma = filaFirmas + 3;
-    worksheet.mergeCells(`B${filaFirma}:C${filaFirma}`);
-    worksheet.getCell(`B${filaFirma}`).value = '___________________________';
-    worksheet.getCell(`B${filaFirma}`).alignment = { horizontal: 'center' };
-    worksheet.mergeCells(`B${filaFirma + 1}:C${filaFirma + 1}`);
-    worksheet.getCell(`B${filaFirma + 1}`).value = 'Firma';
-    worksheet.getCell(`B${filaFirma + 1}`).alignment = { horizontal: 'center' };
+    const filaDatos = filaFirmas + 2;
+    worksheet.mergeCells(`B${filaDatos}:C${filaDatos}`);
+    worksheet.getCell(`B${filaDatos}`).value = cuadre.nombre_administradora || '';
+    worksheet.getCell(`B${filaDatos}`).alignment = { horizontal: 'center' };
 
-    worksheet.mergeCells(`D${filaFirma}:E${filaFirma}`);
-    worksheet.getCell(`D${filaFirma}`).value = '___________________________';
-    worksheet.getCell(`D${filaFirma}`).alignment = { horizontal: 'center' };
-    worksheet.mergeCells(`D${filaFirma + 1}:E${filaFirma + 1}`);
-    worksheet.getCell(`D${filaFirma + 1}`).value = 'Firma';
-    worksheet.getCell(`D${filaFirma + 1}`).alignment = { horizontal: 'center' };
+    worksheet.mergeCells(`D${filaDatos}:E${filaDatos}`);
+    worksheet.getCell(`D${filaDatos}`).value = cuadre.cedula_administradora || '';
+    worksheet.getCell(`D${filaDatos}`).alignment = { horizontal: 'center' };
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -1145,9 +1138,9 @@ export default function CuadreDetalle() {
             </div>
           ) : null}
 
-          {cuadre.url_foto_consignacion || cuadre.firma_cajero_url ? (
+          {cuadre.url_foto_consignacion || cuadre.nombre_administradora || cuadre.cedula_administradora ? (
             <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-4 text-gray-800">Consignación y Firma</h2>
+              <h2 className="text-xl font-semibold mb-4 text-gray-800">Consignación y Administradora</h2>
               
               {cuadre.url_foto_consignacion && (
                 <div className="mb-6">
@@ -1160,14 +1153,19 @@ export default function CuadreDetalle() {
                 </div>
               )}
 
-              {cuadre.firma_cajero_url && (
-                <div>
-                  <h3 className="text-lg font-medium mb-3 text-gray-800">Firma Cajero</h3>
-                  <img
-                    src={cuadre.firma_cajero_url}
-                    alt="Firma Cajero"
-                    className="w-full max-w-lg rounded border border-gray-200 shadow-sm"
-                  />
+              {(cuadre.nombre_administradora || cuadre.cedula_administradora) && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-medium mb-3 text-gray-800">Administradora</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Nombre</p>
+                      <p className="text-base font-semibold text-gray-900">{cuadre.nombre_administradora || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Cédula</p>
+                      <p className="text-base font-semibold text-gray-900">{cuadre.cedula_administradora || 'N/A'}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 

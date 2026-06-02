@@ -7,7 +7,6 @@ import { Loader2, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta, DenominacionCuadre, GastoDiario, PagoTurnero, SupabaseError } from '@/types';
 import UploadFoto from '@/components/UploadFoto';
-import FirmaDigital from '@/components/FirmaDigital';
 import toast from 'react-hot-toast';
 
 const denominacionesList = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
@@ -242,7 +241,7 @@ export default function CuadreWizard() {
         'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'venta_confiteria',
         'tar_inicial', 'tar_consumo', 'tar_fiestas', 'tar_malas', 'tar_final',
         'total_fisico', 'total_sistema', 'sobrante', 'faltante',
-        'url_foto_consignacion', 'firma_cajero_url', 'observaciones',
+        'url_foto_consignacion', 'firma_cajero_url', 'nombre_administradora', 'cedula_administradora', 'observaciones',
         'fecha_envio', 'fecha_aprobacion', 'observacion_superadmin',
         'consignacion_pendiente', 'valor_consignado', 'consigna_hoy'
       ];
@@ -509,7 +508,7 @@ export default function CuadreWizard() {
         <div className="mb-8">
           <button onClick={() => router.push('/admin')} className="flex items-center gap-2 text-white mb-4 hover:text-white/80 transition-colors">
             <ArrowLeft className="w-5 h-5" />
-            Volver al Dashboard
+            Volver al Inicio
           </button>
           <h1 className="text-3xl font-bold text-white mb-4 drop-shadow-lg">Cuadre Diario</h1>
           <div className="flex flex-wrap gap-2">
@@ -918,13 +917,32 @@ export default function CuadreWizard() {
               )}
               
               <div>
-                <h3 className="text-lg font-medium mb-3">Firma Cajero</h3>
-                <FirmaDigital
-                  label="Firma Cajero"
-                  currentUrl={cuadre?.firma_cajero_url}
-                  onSign={(url) => saveCuadre({ firma_cajero_url: url })}
-                  onClear={() => saveCuadre({ firma_cajero_url: undefined })}
-                />
+                <h3 className="text-lg font-medium mb-3">Administradora</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                    <input
+                      type="text"
+                      value={localCuadre?.nombre_administradora || ''}
+                      onChange={(e) => setLocalCuadre({ ...localCuadre, nombre_administradora: e.target.value })}
+                      onBlur={() => saveCuadre({ nombre_administradora: localCuadre?.nombre_administradora || '' })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                      placeholder="Nombre de la administradora"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cédula</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={localCuadre?.cedula_administradora || ''}
+                      onChange={(e) => setLocalCuadre({ ...localCuadre, cedula_administradora: e.target.value })}
+                      onBlur={() => saveCuadre({ cedula_administradora: localCuadre?.cedula_administradora || '' })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                      placeholder="Número de cédula"
+                    />
+                  </div>
+                </div>
               </div>
 
               {cuadre?.url_foto_consignacion && (readyToSend || valorConsignadoInput !== '') && (
@@ -977,7 +995,12 @@ export default function CuadreWizard() {
               
               <button
                 onClick={enviarCuadre}
-                disabled={saving || !cuadre?.firma_cajero_url || (consignaHoy && !!cuadre?.url_foto_consignacion && !readyToSend)}
+                disabled={
+                  saving ||
+                  !localCuadre?.nombre_administradora ||
+                  !localCuadre?.cedula_administradora ||
+                  (consignaHoy && !!cuadre?.url_foto_consignacion && !readyToSend)
+                }
                 className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${
                   consignaHoy ? (cuadre?.url_foto_consignacion ? 'bg-success text-white' : 'bg-warning text-white') : 'bg-success text-white'
                 }`}

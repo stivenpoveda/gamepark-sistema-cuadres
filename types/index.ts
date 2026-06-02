@@ -83,6 +83,8 @@ export type CuadreDiario = {
   url_foto_consignacion?: string;
   firma_cajero_url?: string;
   firma_admin_url?: string;
+  nombre_administradora?: string;
+  cedula_administradora?: string;
   observaciones?: string;
   estado: 'borrador' | 'pendiente' | 'enviado' | 'aprobado' | 'devuelto';
   observacion_superadmin?: string;

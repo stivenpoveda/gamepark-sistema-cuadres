@@ -133,7 +133,7 @@ export default function TurnerosPage() {
         </div>
         <nav className="px-4">
           <a href="/admin" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2">
-            Dashboard
+            Inicio
           </a>
           <a href="/admin/gastos" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2">
             Gastos
