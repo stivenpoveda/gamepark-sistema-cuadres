@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta } from '@/types';
@@ -15,6 +15,8 @@ export default function ReportesPage() {
   const [user, setUser] = useState<Usuario | null>(null);
   const [puntoVenta, setPuntoVenta] = useState<PuntoDeVenta | null>(null);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
+  const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number>>({});
+  const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number>>({});
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
 
@@ -51,6 +53,33 @@ export default function ReportesPage() {
         })) || [];
 
         setCuadres(cuadresWithData);
+
+        const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
+        if (cuadreIds.length > 0) {
+          const [gastosRes, turnerosRes] = await Promise.all([
+            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+          ]);
+
+          const gastosMap: Record<string, number> = {};
+          (gastosRes.data || []).forEach((g: any) => {
+            const id = g.cuadre_id as string | undefined;
+            if (!id) return;
+            gastosMap[id] = (gastosMap[id] || 0) + (Number(g.valor) || 0);
+          });
+          setGastosByCuadreId(gastosMap);
+
+          const turnerosMap: Record<string, number> = {};
+          (turnerosRes.data || []).forEach((t: any) => {
+            const id = t.cuadre_id as string | undefined;
+            if (!id) return;
+            turnerosMap[id] = (turnerosMap[id] || 0) + (Number(t.valor) || 0);
+          });
+          setTurnerosByCuadreId(turnerosMap);
+        } else {
+          setGastosByCuadreId({});
+          setTurnerosByCuadreId({});
+        }
       }
 
       const today = new Date();
@@ -74,13 +103,41 @@ export default function ReportesPage() {
 
   const totals = cuadresFiltrados.reduce(
     (acc, c) => {
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
+
       acc.totalFisico += Number(c.total_fisico) || 0;
-      acc.totalSistema += Number(c.total_sistema) || 0;
-      acc.sobrante += Number(c.sobrante) || 0;
-      acc.faltante += Number(c.faltante) || 0;
+      acc.ventaTotal += Number(c.recaudo) || 0;
+      acc.valorGeneralAConsignar += metrics.totalGeneralAConsignar;
+      acc.ventaDatafono += Number(c.venta_tarjetas) || 0;
+      acc.valorConsignado += Number(c.valor_consignado) || 0;
+      acc.deducciones += gastos + turneros;
+      acc.sobrante += metrics.sobrante;
+      acc.faltante += metrics.faltante;
       return acc;
     },
-    { totalFisico: 0, totalSistema: 0, sobrante: 0, faltante: 0 }
+    {
+      totalFisico: 0,
+      ventaTotal: 0,
+      valorGeneralAConsignar: 0,
+      ventaDatafono: 0,
+      valorConsignado: 0,
+      deducciones: 0,
+      sobrante: 0,
+      faltante: 0,
+    }
   );
 
   const exportarExcel = async () => {
@@ -89,20 +146,45 @@ export default function ReportesPage() {
 
     worksheet.columns = [
       { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Venta Total', key: 'ventaTotal', width: 15 },
+      { header: 'Valor General a Consignar', key: 'valorGeneralAConsignar', width: 22 },
+      { header: 'Venta Datafono', key: 'ventaDatafono', width: 15 },
+      { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
+      { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 22 },
+      { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
-      { header: 'Total Sistema', key: 'totalSistema', width: 15 },
       { header: 'Sobrante', key: 'sobrante', width: 15 },
       { header: 'Faltante', key: 'faltante', width: 15 },
       { header: 'Estado', key: 'estado', width: 15 },
     ];
 
     cuadresFiltrados.forEach((c) => {
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
+
       worksheet.addRow({
         fecha: new Date(c.fecha).toLocaleDateString(),
+        ventaTotal: formatCOP(c.recaudo),
+        valorGeneralAConsignar: formatCOP(metrics.totalGeneralAConsignar),
+        ventaDatafono: formatCOP(c.venta_tarjetas),
+        valorConsignado: formatCOP(c.valor_consignado),
+        deducciones: formatCOP(gastos + turneros),
+        pendiente: formatCOP(c.consignacion_pendiente),
         totalFisico: formatCOP(c.total_fisico),
-        totalSistema: formatCOP(c.total_sistema),
-        sobrante: formatCOP(c.sobrante),
-        faltante: formatCOP(c.faltante),
+        sobrante: formatCOP(metrics.sobrante),
+        faltante: formatCOP(metrics.faltante),
         estado: c.estado,
       });
     });
@@ -205,16 +287,16 @@ export default function ReportesPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Físico</p>
-            <p className="text-2xl font-bold text-blue-700">{formatCOP(totals.totalFisico)}</p>
+            <p className="text-sm text-gray-600">Venta Total</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaTotal)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Sistema</p>
-            <p className="text-2xl font-bold text-gray-700">{formatCOP(totals.totalSistema)}</p>
+            <p className="text-sm text-gray-600">Valor General a Consignar</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorGeneralAConsignar)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Sobrante</p>
-            <p className="text-2xl font-bold text-green-700">{formatCOP(totals.sobrante)}</p>
+            <p className="text-sm text-gray-600">Deducciones</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.deducciones)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
             <p className="text-sm text-gray-600">Total Faltante</p>
@@ -224,28 +306,51 @@ export default function ReportesPage() {
 
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="overflow-x-auto max-w-full">
-            <table className="w-full min-w-[680px] table-fixed">
+            <table className="w-full min-w-[860px] table-fixed">
               <thead className="bg-light">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Fecha</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Físico</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Total Sistema</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Diferencia</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Fecha</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[210px] whitespace-nowrap">Valor General a Consignar</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Deducciones</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Pendiente</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Total Físico</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Diferencia</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {cuadresFiltrados.map((cuadre) => (
-                  <tr key={cuadre.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm">{formatDate(cuadre.fecha)}</td>
-                    <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.total_fisico)}</td>
-                    <td className="px-6 py-4 text-sm font-medium">{formatCOP(cuadre.total_sistema)}</td>
-                    <td className={`px-6 py-4 text-sm font-medium ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
-                      {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
-                    </td>
-                    <td className="px-6 py-4">{getEstadoBadge(cuadre.estado)}</td>
-                  </tr>
-                ))}
+                {cuadresFiltrados.map((cuadre) => {
+                  const gastos = gastosByCuadreId[cuadre.id] || 0;
+                  const turneros = turnerosByCuadreId[cuadre.id] || 0;
+                  const metrics = calcCuadreMetrics({
+                    recaudo: cuadre.recaudo,
+                    venta_tarjetas: cuadre.venta_tarjetas,
+                    consignacion_pendiente: cuadre.consignacion_pendiente,
+                    valor_consignado: cuadre.valor_consignado,
+                    url_foto_consignacion: cuadre.url_foto_consignacion,
+                    consigna_hoy: cuadre.consigna_hoy,
+                    gastos: [{ valor: gastos }],
+                    turneros: [{ valor: turneros }],
+                    total_fisico: cuadre.total_fisico,
+                    context: 'final',
+                  });
+
+                  return (
+                    <tr key={cuadre.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(gastos + turneros)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.consignacion_pendiente)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.total_fisico)}</td>
+                      <td className={`px-6 py-4 text-sm font-medium text-right whitespace-nowrap ${metrics.sobrante > 0 ? 'text-green-600' : metrics.faltante > 0 ? 'text-red-600' : ''}`}>
+                        {metrics.sobrante > 0 ? `+${formatCOP(metrics.sobrante)}` : metrics.faltante > 0 ? `-${formatCOP(metrics.faltante)}` : '$0'}
+                      </td>
+                      <td className="px-6 py-4">{getEstadoBadge(cuadre.estado)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

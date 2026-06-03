@@ -169,7 +169,7 @@ export default function TurnerosPage() {
             <div key={turnero.id} className="bg-white p-6 rounded-xl shadow-md flex justify-between items-start">
               <div>
                 <p className="font-medium">{turnero.nombre_turnero}</p>
-                {turnero.horario && <p className="text-sm text-gray-500">{turnero.horario}</p>}
+                {turnero.horario && <p className="text-sm text-gray-500">Cédula: {turnero.horario}</p>}
                 <p className="text-sm text-gray-400">{new Date(turnero.fecha).toLocaleDateString()}</p>
                 {turnero.url_foto_soporte && (
                   <img
@@ -212,9 +212,10 @@ export default function TurnerosPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Horario</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cédula</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={newTurnero.horario || ''}
                     onChange={(e) => setNewTurnero({ ...newTurnero, horario: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"

@@ -9,7 +9,7 @@ interface UploadFotoProps {
   bucket?: string;
   onUpload: (url: string) => void;
   onRemove?: () => void;
-  currentUrl?: string;
+  currentUrl?: string | null;
   accept?: string;
 }
 

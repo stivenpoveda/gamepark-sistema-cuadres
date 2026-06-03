@@ -965,8 +965,8 @@ export default function CuadreDetalle() {
               <p className="text-2xl font-bold text-blue-700">{formatCOP(cuadre.total_fisico)}</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-700">Total Efectivo a Consignar</p>
-              <p className="text-2xl font-bold text-gray-700">{formatCOP(totalEfectivoEsperado)}</p>
+              <p className="text-sm text-gray-700">Valor General a Consignar</p>
+              <p className="text-2xl font-bold text-gray-700">{formatCOP(totalGeneralAConsignar)}</p>
             </div>
             <div className={`p-4 rounded-lg border ${(Number(cuadre.sobrante) || 0) > 0 ? 'bg-green-50 border-green-200' : (Number(cuadre.faltante) || 0) > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
               <p className={`text-sm ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-700' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-700' : 'text-gray-700'}`}>

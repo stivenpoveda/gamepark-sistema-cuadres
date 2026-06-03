@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, PuntoDeVenta } from '@/types';
@@ -94,11 +94,27 @@ export default function SuperadminReportesPage() {
     (acc, c) => {
       acc.totalFisico += Number(c.total_fisico) || 0;
       acc.ventaTotal += Number(c.recaudo) || 0;
-      acc.valorAConsignar += Number(c.total_sistema) || 0;
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
+
+      acc.valorGeneralAConsignar += metrics.totalGeneralAConsignar;
       acc.ventaDatafono += Number(c.venta_tarjetas) || 0;
       acc.valorConsignado += Number(c.valor_consignado) || 0;
-      acc.gastos += gastosByCuadreId[c.id] || 0;
-      acc.turneros += turnerosByCuadreId[c.id] || 0;
+      acc.gastos += gastos;
+      acc.turneros += turneros;
+      acc.deducciones += gastos + turneros;
       acc.sobrante += Number(c.sobrante) || 0;
       acc.faltante += Number(c.faltante) || 0;
       return acc;
@@ -106,29 +122,29 @@ export default function SuperadminReportesPage() {
     {
       totalFisico: 0,
       ventaTotal: 0,
-      valorAConsignar: 0,
+      valorGeneralAConsignar: 0,
       ventaDatafono: 0,
       valorConsignado: 0,
       gastos: 0,
       turneros: 0,
+      deducciones: 0,
       sobrante: 0,
       faltante: 0,
     }
   );
 
-  const exportarExcel = async () => {
+  const exportarExcelGeneral = async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Cuadres');
+    const worksheet = workbook.addWorksheet('General');
 
     worksheet.columns = [
       { header: 'Punto de Venta', key: 'pdv', width: 25 },
       { header: 'Fecha', key: 'fecha', width: 15 },
       { header: 'Venta Total', key: 'ventaTotal', width: 15 },
-      { header: 'Valor a Consignar', key: 'valorAConsignar', width: 18 },
+      { header: 'Valor General a Consignar', key: 'valorGeneralAConsignar', width: 22 },
       { header: 'Venta Datafono', key: 'ventaDatafono', width: 15 },
       { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
-      { header: 'Gastos', key: 'gastos', width: 15 },
-      { header: 'Turneros', key: 'turneros', width: 15 },
+      { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 22 },
       { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
       { header: 'Sobrante', key: 'sobrante', width: 15 },
@@ -137,15 +153,29 @@ export default function SuperadminReportesPage() {
     ];
 
     cuadresFiltrados.forEach((c) => {
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
+
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
         fecha: new Date(c.fecha).toLocaleDateString(),
         ventaTotal: formatCOP(c.recaudo),
-        valorAConsignar: formatCOP(c.total_sistema),
+        valorGeneralAConsignar: formatCOP(metrics.totalGeneralAConsignar),
         ventaDatafono: formatCOP(c.venta_tarjetas),
         valorConsignado: formatCOP(c.valor_consignado),
-        gastos: formatCOP(gastosByCuadreId[c.id] || 0),
-        turneros: formatCOP(turnerosByCuadreId[c.id] || 0),
+        deducciones: formatCOP(gastos + turneros),
         pendiente: formatCOP(c.consignacion_pendiente),
         totalFisico: formatCOP(c.total_fisico),
         sobrante: formatCOP(c.sobrante),
@@ -161,7 +191,142 @@ export default function SuperadminReportesPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reporte_cuadres_general.xlsx`;
+    a.download = `reporte_general_cuadres.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Reporte exportado exitosamente');
+  };
+
+  const exportarExcelDeducciones = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Deducciones');
+
+    worksheet.columns = [
+      { header: 'Punto de Venta', key: 'pdv', width: 25 },
+      { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Gastos', key: 'gastos', width: 15 },
+      { header: 'Turneros', key: 'turneros', width: 15 },
+      { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 24 },
+    ];
+
+    cuadresFiltrados.forEach((c) => {
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      worksheet.addRow({
+        pdv: c.punto_de_venta?.nombre || 'N/A',
+        fecha: new Date(c.fecha).toLocaleDateString(),
+        gastos: formatCOP(gastos),
+        turneros: formatCOP(turneros),
+        deducciones: formatCOP(gastos + turneros),
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_deducciones.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Reporte exportado exitosamente');
+  };
+
+  const exportarExcelVentas = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Ventas');
+
+    worksheet.columns = [
+      { header: 'Punto de Venta', key: 'pdv', width: 25 },
+      { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Venta Total', key: 'ventaTotal', width: 15 },
+      { header: 'Venta Datafono', key: 'ventaDatafono', width: 15 },
+      { header: 'Venta Efectivo (Hoy)', key: 'ventaEfectivo', width: 18 },
+    ];
+
+    cuadresFiltrados.forEach((c) => {
+      const gastos = gastosByCuadreId[c.id] || 0;
+      const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
+
+      worksheet.addRow({
+        pdv: c.punto_de_venta?.nombre || 'N/A',
+        fecha: new Date(c.fecha).toLocaleDateString(),
+        ventaTotal: formatCOP(c.recaudo),
+        ventaDatafono: formatCOP(c.venta_tarjetas),
+        ventaEfectivo: formatCOP(metrics.totalEfectivoEsperado),
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_ventas.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Reporte exportado exitosamente');
+  };
+
+  const exportarExcelConsignaciones = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Consignaciones');
+
+    worksheet.columns = [
+      { header: 'Punto de Venta', key: 'pdv', width: 25 },
+      { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Consigna Hoy', key: 'consignaHoy', width: 12 },
+      { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
+      { header: 'Pendiente', key: 'pendiente', width: 15 },
+      { header: 'Estado', key: 'estado', width: 12 },
+      { header: 'Con Foto', key: 'conFoto', width: 10 },
+    ];
+
+    const consignaciones = cuadresFiltrados.filter((c) => {
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const conFoto = Boolean(c.url_foto_consignacion);
+      const valor = Number(c.valor_consignado) || 0;
+      return consignaHoy && (conFoto || valor > 0);
+    });
+
+    consignaciones.forEach((c) => {
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const conFoto = Boolean(c.url_foto_consignacion);
+      worksheet.addRow({
+        pdv: c.punto_de_venta?.nombre || 'N/A',
+        fecha: new Date(c.fecha).toLocaleDateString(),
+        consignaHoy: consignaHoy ? 'Sí' : 'No',
+        valorConsignado: formatCOP(c.valor_consignado),
+        pendiente: formatCOP(c.consignacion_pendiente),
+        estado: c.estado,
+        conFoto: conFoto ? 'Sí' : 'No',
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_consignaciones.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Reporte exportado exitosamente');
@@ -188,11 +353,10 @@ export default function SuperadminReportesPage() {
       pdv: string;
       pdvId: string;
       ventaTotal: number;
-      valorAConsignar: number;
+      valorGeneralAConsignar: number;
       ventaDatafono: number;
       valorConsignado: number;
-      gastos: number;
-      turneros: number;
+      deducciones: number;
       pendienteFinMes: number;
       _fechaMax: string;
     }> >((acc, c) => {
@@ -202,11 +366,22 @@ export default function SuperadminReportesPage() {
       const pdv = c.punto_de_venta?.nombre || 'N/A';
       const key = `${pdvId}|${mes}`;
       const ventaTotal = Number(c.recaudo) || 0;
-      const valorAConsignar = Number(c.total_sistema) || 0;
       const ventaDatafono = Number(c.venta_tarjetas) || 0;
       const valorConsignado = Number(c.valor_consignado) || 0;
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
       const pendiente = Number(c.consignacion_pendiente) || 0;
 
       if (!acc[key]) {
@@ -215,22 +390,20 @@ export default function SuperadminReportesPage() {
           pdv,
           pdvId,
           ventaTotal: 0,
-          valorAConsignar: 0,
+          valorGeneralAConsignar: 0,
           ventaDatafono: 0,
           valorConsignado: 0,
-          gastos: 0,
-          turneros: 0,
+          deducciones: 0,
           pendienteFinMes: pendiente,
           _fechaMax: fecha,
         };
       }
 
       acc[key].ventaTotal += ventaTotal;
-      acc[key].valorAConsignar += valorAConsignar;
+      acc[key].valorGeneralAConsignar += metrics.totalGeneralAConsignar;
       acc[key].ventaDatafono += ventaDatafono;
       acc[key].valorConsignado += valorConsignado;
-      acc[key].gastos += gastos;
-      acc[key].turneros += turneros;
+      acc[key].deducciones += gastos + turneros;
       if (fecha >= acc[key]._fechaMax) {
         acc[key]._fechaMax = fecha;
         acc[key].pendienteFinMes = pendiente;
@@ -333,7 +506,7 @@ export default function SuperadminReportesPage() {
               <p className="text-white/80 drop-shadow text-sm mt-1">Resumen por fechas y consolidado mensual</p>
             </div>
             <button
-              onClick={exportarExcel}
+              onClick={exportarExcelGeneral}
               className="flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg w-full sm:w-auto"
             >
               <Download className="w-5 h-5" />
@@ -383,8 +556,8 @@ export default function SuperadminReportesPage() {
             <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaTotal)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Valor a Consignar</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorAConsignar)}</p>
+            <p className="text-sm text-gray-600">Valor General a Consignar</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorGeneralAConsignar)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-sm text-gray-600">Venta Datafono</p>
@@ -395,12 +568,8 @@ export default function SuperadminReportesPage() {
             <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorConsignado)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Gastos</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.gastos)}</p>
-          </div>
-          <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Turneros</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.turneros)}</p>
+            <p className="text-sm text-gray-600">Deducciones (Gastos + Turneros)</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.deducciones)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-sm text-gray-600">Total Sobrante</p>
@@ -409,6 +578,62 @@ export default function SuperadminReportesPage() {
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-sm text-gray-600">Total Faltante</p>
             <p className="text-2xl font-bold text-red-700">{formatCOP(totals.faltante)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl border border-white/30 mb-6">
+          <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">Descargas</h3>
+              <p className="text-sm text-gray-600">Exporta análisis por fecha y por punto de venta usando los filtros.</p>
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <button
+                onClick={exportarExcelGeneral}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
+              >
+                <Download className="w-5 h-5" />
+                General
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="font-semibold text-gray-900">Deducciones</p>
+              <p className="text-sm text-gray-600 mt-1">Gastos + Turneros por día y punto de venta.</p>
+              <button
+                onClick={exportarExcelDeducciones}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                <FileText className="w-4 h-4" />
+                Descargar Excel
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="font-semibold text-gray-900">Ventas</p>
+              <p className="text-sm text-gray-600 mt-1">Venta total, datafono y efectivo esperado.</p>
+              <button
+                onClick={exportarExcelVentas}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                <FileText className="w-4 h-4" />
+                Descargar Excel
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="font-semibold text-gray-900">Consignaciones</p>
+              <p className="text-sm text-gray-600 mt-1">Consignaciones realizadas por punto de venta.</p>
+              <button
+                onClick={exportarExcelConsignaciones}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                <FileText className="w-4 h-4" />
+                Descargar Excel
+              </button>
+            </div>
           </div>
         </div>
 
@@ -439,8 +664,23 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(cuadre.recaudo)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Valor a Consignar</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.total_sistema)}</p>
+                        <p className="text-gray-600">Valor General a Consignar</p>
+                        <p className="font-semibold text-gray-900">
+                          {formatCOP(
+                            calcCuadreMetrics({
+                              recaudo: cuadre.recaudo,
+                              venta_tarjetas: cuadre.venta_tarjetas,
+                              consignacion_pendiente: cuadre.consignacion_pendiente,
+                              valor_consignado: cuadre.valor_consignado,
+                              url_foto_consignacion: cuadre.url_foto_consignacion,
+                              consigna_hoy: cuadre.consigna_hoy,
+                              gastos: [{ valor: gastosByCuadreId[cuadre.id] || 0 }],
+                              turneros: [{ valor: turnerosByCuadreId[cuadre.id] || 0 }],
+                              total_fisico: cuadre.total_fisico,
+                              context: 'final',
+                            }).totalGeneralAConsignar
+                          )}
+                        </p>
                       </div>
                       <div>
                         <p className="text-gray-600">Datafono</p>
@@ -451,12 +691,10 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(cuadre.valor_consignado)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Gastos</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Turneros</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</p>
+                        <p className="text-gray-600">Deducciones</p>
+                        <p className="font-semibold text-gray-900">
+                          {formatCOP((gastosByCuadreId[cuadre.id] || 0) + (turnerosByCuadreId[cuadre.id] || 0))}
+                        </p>
                       </div>
                       <div className="col-span-2">
                         <p className="text-gray-600">Pendiente</p>
@@ -475,12 +713,11 @@ export default function SuperadminReportesPage() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Valor a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[190px] whitespace-nowrap">Valor General a Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[140px] whitespace-nowrap">Datafono</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Pendiente</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Gastos</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Turneros</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Deducciones</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Total Físico</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[120px] whitespace-nowrap">Diferencia</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
@@ -489,29 +726,45 @@ export default function SuperadminReportesPage() {
               <tbody className="divide-y divide-gray-200">
                 {cuadresFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
                       No hay cuadres para mostrar en este rango de fechas.
                     </td>
                   </tr>
                 ) : (
-                  cuadresFiltrados.map((cuadre) => (
-                    <tr key={cuadre.id} className="hover:bg-gray-50">
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.total_sistema)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(gastosByCuadreId[cuadre.id] || 0)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(turnerosByCuadreId[cuadre.id] || 0)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
-                      <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
-                        {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
-                    </tr>
-                  ))
+                  cuadresFiltrados.map((cuadre) => {
+                    const gastos = gastosByCuadreId[cuadre.id] || 0;
+                    const turneros = turnerosByCuadreId[cuadre.id] || 0;
+                    const metrics = calcCuadreMetrics({
+                      recaudo: cuadre.recaudo,
+                      venta_tarjetas: cuadre.venta_tarjetas,
+                      consignacion_pendiente: cuadre.consignacion_pendiente,
+                      valor_consignado: cuadre.valor_consignado,
+                      url_foto_consignacion: cuadre.url_foto_consignacion,
+                      consigna_hoy: cuadre.consigna_hoy,
+                      gastos: [{ valor: gastos }],
+                      turneros: [{ valor: turneros }],
+                      total_fisico: cuadre.total_fisico,
+                      context: 'final',
+                    });
+
+                    return (
+                      <tr key={cuadre.id} className="hover:bg-gray-50">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(gastos + turneros)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
+                        <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
+                          {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
+                        </td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -549,8 +802,8 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(row.ventaTotal)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Valor a Consignar</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.valorAConsignar)}</p>
+                        <p className="text-gray-600">Valor General a Consignar</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.valorGeneralAConsignar)}</p>
                       </div>
                       <div>
                         <p className="text-gray-600">Datafono</p>
@@ -561,12 +814,8 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(row.valorConsignado)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Gastos</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.gastos)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Turneros</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.turneros)}</p>
+                        <p className="text-gray-600">Deducciones</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.deducciones)}</p>
                       </div>
                     </div>
                   </div>
@@ -581,18 +830,17 @@ export default function SuperadminReportesPage() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Mes</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Valor a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[200px] whitespace-nowrap">Valor General a Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Pendiente Fin</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Datafono</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Gastos</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Turneros</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Deducciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {consolidadoMensual.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                       No hay datos para el consolidado mensual en este rango.
                     </td>
                   </tr>
@@ -602,12 +850,11 @@ export default function SuperadminReportesPage() {
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium whitespace-nowrap">{row.mes}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm truncate">{row.pdv}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.ventaTotal)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.valorAConsignar)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.valorGeneralAConsignar)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.pendienteFinMes)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.ventaDatafono)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.valorConsignado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.gastos)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.turneros)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.deducciones)}</td>
                     </tr>
                   ))
                 )}

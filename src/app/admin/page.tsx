@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate, getTodayString } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
 import { Loader2, LogOut, Plus, FileText, Calendar, Trash2, Menu, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -14,6 +14,8 @@ export default function AdminDashboard() {
   const [user, setUser] = useState<Usuario | null>(null);
   const [puntoVenta, setPuntoVenta] = useState<PuntoDeVenta | null>(null);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
+  const [gastosPorCuadreId, setGastosPorCuadreId] = useState<Record<string, number>>({});
+  const [turnerosPorCuadreId, setTurnerosPorCuadreId] = useState<Record<string, number>>({});
   const [selectedDate, setSelectedDate] = useState<string>(getTodayString());
   const [deleting, setDeleting] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -72,6 +74,34 @@ export default function AdminDashboard() {
         }
 
         setCuadres(cuadresData || []);
+
+        const cuadreIds = (cuadresData || []).map((c) => c.id).filter(Boolean) as string[];
+        if (cuadreIds.length > 0) {
+          const [gastosRes, turnerosRes] = await Promise.all([
+            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+          ]);
+
+          const gastosMap: Record<string, number> = {};
+          for (const g of gastosRes.data || []) {
+            const id = (g as any).cuadre_id as string | undefined;
+            if (!id) continue;
+            gastosMap[id] = (gastosMap[id] || 0) + (Number((g as any).valor) || 0);
+          }
+
+          const turnerosMap: Record<string, number> = {};
+          for (const t of turnerosRes.data || []) {
+            const id = (t as any).cuadre_id as string | undefined;
+            if (!id) continue;
+            turnerosMap[id] = (turnerosMap[id] || 0) + (Number((t as any).valor) || 0);
+          }
+
+          setGastosPorCuadreId(gastosMap);
+          setTurnerosPorCuadreId(turnerosMap);
+        } else {
+          setGastosPorCuadreId({});
+          setTurnerosPorCuadreId({});
+        }
       }
 
       setLoading(false);
@@ -91,6 +121,22 @@ export default function AdminDashboard() {
     const cTime = new Date(c.fecha).getTime();
     return cTime > accTime ? c : acc;
   }, null);
+
+  const ultimoCuadre = cuadres[0];
+  const ultimoCuadreMetrics = ultimoCuadre
+    ? calcCuadreMetrics({
+        recaudo: ultimoCuadre.recaudo,
+        venta_tarjetas: ultimoCuadre.venta_tarjetas,
+        consignacion_pendiente: ultimoCuadre.consignacion_pendiente,
+        valor_consignado: ultimoCuadre.valor_consignado,
+        url_foto_consignacion: ultimoCuadre.url_foto_consignacion,
+        consigna_hoy: ultimoCuadre.consigna_hoy,
+        gastos: [{ valor: gastosPorCuadreId[ultimoCuadre.id] || 0 }],
+        turneros: [{ valor: turnerosPorCuadreId[ultimoCuadre.id] || 0 }],
+        total_fisico: ultimoCuadre.total_fisico,
+        context: 'final',
+      })
+    : null;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -369,8 +415,8 @@ export default function AdminDashboard() {
             <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.recaudo || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Valor a Consignar</p>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.total_sistema || 0)}</p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Valor General a Consignar</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoCuadreMetrics?.totalGeneralAConsignar || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-xs sm:text-sm text-gray-600 mb-2">Diferencia</p>
@@ -394,76 +440,91 @@ export default function AdminDashboard() {
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor General a Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {cuadres.map((cuadre) => (
-                  <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
-                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.total_sistema)}</td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4">
-                      {cuadre.consignacion_pendiente &&
-                      cuadre.consignacion_pendiente > 0 &&
-                      ultimoCuadreConPendiente?.id === cuadre.id ? (
-                        <span className="text-orange-700 font-medium text-xs sm:text-sm">
-                          {formatCOP(cuadre.consignacion_pendiente)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 text-xs sm:text-sm">$0</span>
-                      )}
-                    </td>
-                    <td className="px-3 sm:px-6 py-3 sm:py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            const puedeEditar = 
-                              cuadre.estado === 'borrador' || 
-                              cuadre.estado === 'pendiente' ||
-                              (cuadre.estado === 'enviado' &&
-                                (cuadre.consigna_hoy ?? true) === true &&
-                                !cuadre.url_foto_consignacion);
-                            
-                            if (puedeEditar) {
-                              router.push(`/admin/cuadre/nuevo?date=${cuadre.fecha}`);
-                            } else {
-                              router.push(`/admin/cuadre/${cuadre.id}`);
-                            }
-                          }}
-                          className="text-primary hover:text-primary/80 font-medium hover:underline text-xs sm:text-sm"
-                        >
-                          {
-                            (cuadre.estado === 'borrador' ||
-                              cuadre.estado === 'pendiente' ||
-                              (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion))
-                              ? 'Editar'
-                              : 'Ver'
-                          }
-                        </button>
-                        {(cuadre.estado === 'borrador' ||
-                          cuadre.estado === 'pendiente' ||
-                          (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)) && (
-                          <button
-                            onClick={() => handleDeleteCuadre(cuadre.id)}
-                            disabled={deleting === cuadre.id}
-                            className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
-                          >
-                            {deleting === cuadre.id ? (
-                              <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                            )}
-                          </button>
+                {cuadres.map((cuadre) => {
+                  const totalGastos = gastosPorCuadreId[cuadre.id] || 0;
+                  const totalTurneros = turnerosPorCuadreId[cuadre.id] || 0;
+                  const metrics = calcCuadreMetrics({
+                    recaudo: cuadre.recaudo,
+                    venta_tarjetas: cuadre.venta_tarjetas,
+                    consignacion_pendiente: cuadre.consignacion_pendiente,
+                    valor_consignado: cuadre.valor_consignado,
+                    url_foto_consignacion: cuadre.url_foto_consignacion,
+                    consigna_hoy: cuadre.consigna_hoy,
+                    gastos: [{ valor: totalGastos }],
+                    turneros: [{ valor: totalTurneros }],
+                    total_fisico: cuadre.total_fisico,
+                    context: 'final',
+                  });
+
+                  return (
+                    <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(metrics.totalGeneralAConsignar)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        {cuadre.consignacion_pendiente &&
+                        cuadre.consignacion_pendiente > 0 &&
+                        ultimoCuadreConPendiente?.id === cuadre.id ? (
+                          <span className="text-orange-700 font-medium text-xs sm:text-sm">
+                            {formatCOP(cuadre.consignacion_pendiente)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs sm:text-sm">$0</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              const puedeEditar =
+                                cuadre.estado === 'borrador' ||
+                                cuadre.estado === 'pendiente' ||
+                                (cuadre.estado === 'enviado' &&
+                                  (cuadre.consigna_hoy ?? true) === true &&
+                                  !cuadre.url_foto_consignacion);
+
+                              if (puedeEditar) {
+                                router.push(`/admin/cuadre/nuevo?date=${cuadre.fecha}`);
+                              } else {
+                                router.push(`/admin/cuadre/${cuadre.id}`);
+                              }
+                            }}
+                            className="text-primary hover:text-primary/80 font-medium hover:underline text-xs sm:text-sm"
+                          >
+                            {cuadre.estado === 'borrador' ||
+                            cuadre.estado === 'pendiente' ||
+                            (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)
+                              ? 'Editar'
+                              : 'Ver'}
+                          </button>
+                          {(cuadre.estado === 'borrador' ||
+                            cuadre.estado === 'pendiente' ||
+                            (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)) && (
+                            <button
+                              onClick={() => handleDeleteCuadre(cuadre.id)}
+                              disabled={deleting === cuadre.id}
+                              className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                            >
+                              {deleting === cuadre.id ? (
+                                <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

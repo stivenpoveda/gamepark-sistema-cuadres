@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, formatDate, getTodayString } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
 import { Loader2, LogOut, Trash2, Filter, Menu, X, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -14,6 +14,8 @@ export default function SuperAdminDashboard() {
   const [user, setUser] = useState<Usuario | null>(null);
   const [cuadres, setCuadres] = useState<(CuadreDiario & { punto_de_venta?: PuntoDeVenta; usuario?: Usuario })[]>([]);
   const [puntosDeVenta, setPuntosDeVenta] = useState<PuntoDeVenta[]>([]);
+  const [gastosPorCuadreId, setGastosPorCuadreId] = useState<Record<string, number>>({});
+  const [turnerosPorCuadreId, setTurnerosPorCuadreId] = useState<Record<string, number>>({});
   const [deleting, setDeleting] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -74,6 +76,34 @@ export default function SuperAdminDashboard() {
       })) || [];
 
       setCuadres(cuadresWithData);
+
+      const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
+      if (cuadreIds.length > 0) {
+        const [gastosRes, turnerosRes] = await Promise.all([
+          supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+          supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+        ]);
+
+        const gastosMap: Record<string, number> = {};
+        for (const g of gastosRes.data || []) {
+          const id = (g as any).cuadre_id as string | undefined;
+          if (!id) continue;
+          gastosMap[id] = (gastosMap[id] || 0) + (Number((g as any).valor) || 0);
+        }
+
+        const turnerosMap: Record<string, number> = {};
+        for (const t of turnerosRes.data || []) {
+          const id = (t as any).cuadre_id as string | undefined;
+          if (!id) continue;
+          turnerosMap[id] = (turnerosMap[id] || 0) + (Number((t as any).valor) || 0);
+        }
+
+        setGastosPorCuadreId(gastosMap);
+        setTurnerosPorCuadreId(turnerosMap);
+      } else {
+        setGastosPorCuadreId({});
+        setTurnerosPorCuadreId({});
+      }
       setLoading(false);
     };
 
@@ -385,60 +415,90 @@ export default function SuperAdminDashboard() {
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres ({filteredCuadres.length})</h3>
             </div>
             <div className="overflow-x-auto max-w-full">
-              <table className="w-full min-w-[680px] table-fixed">
+              <table className="w-full min-w-[1060px] table-fixed">
                 <thead className="bg-light">
                   <tr>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Local</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell">Ciudad</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell">Total</th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[190px] whitespace-nowrap">Valor General a Consignar</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[140px] whitespace-nowrap">Datafono</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Pendiente</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Deducciones</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Total Físico</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[120px] whitespace-nowrap">Diferencia</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredCuadres.map((cuadre) => (
-                    <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm hidden sm:table-cell">{cuadre.punto_de_venta?.ciudad || 'N/A'}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">
-                        {cuadre.consignacion_pendiente &&
-                        cuadre.consignacion_pendiente > 0 &&
-                        ultimoPendientePorPdv[cuadre.punto_de_venta_id || '']?.id === cuadre.id ? (
-                          <span className="text-orange-700 font-medium text-xs sm:text-sm">
-                            {formatCOP(cuadre.consignacion_pendiente)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs sm:text-sm">$0</span>
-                        )}
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium hidden sm:table-cell">{formatCOP(cuadre.total_fisico)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">
-                        <div className="flex gap-2 items-center">
-                          <button
-                            onClick={() => router.push(`/admin/cuadre/${cuadre.id}`)}
-                            className="text-primary hover:text-primary/80 font-medium text-xs sm:text-sm"
-                          >
-                            Ver
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCuadre(cuadre.id)}
-                            disabled={deleting === cuadre.id}
-                            className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
-                          >
-                            {deleting === cuadre.id ? (
-                              <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredCuadres.map((cuadre) => {
+                    const totalGastos = gastosPorCuadreId[cuadre.id] || 0;
+                    const totalTurneros = turnerosPorCuadreId[cuadre.id] || 0;
+                    const totalDeducciones = totalGastos + totalTurneros;
+                    const metrics = calcCuadreMetrics({
+                      recaudo: cuadre.recaudo,
+                      venta_tarjetas: cuadre.venta_tarjetas,
+                      consignacion_pendiente: cuadre.consignacion_pendiente,
+                      valor_consignado: cuadre.valor_consignado,
+                      url_foto_consignacion: cuadre.url_foto_consignacion,
+                      consigna_hoy: cuadre.consigna_hoy,
+                      gastos: [{ valor: totalGastos }],
+                      turneros: [{ valor: totalTurneros }],
+                      total_fisico: cuadre.total_fisico,
+                      context: 'final',
+                    });
+
+                    return (
+                      <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">
+                          {cuadre.consignacion_pendiente &&
+                          cuadre.consignacion_pendiente > 0 &&
+                          ultimoPendientePorPdv[cuadre.punto_de_venta_id || '']?.id === cuadre.id ? (
+                            <span className="text-orange-700 font-medium text-xs sm:text-sm">
+                              {formatCOP(cuadre.consignacion_pendiente)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs sm:text-sm">$0</span>
+                          )}
+                        </td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(totalDeducciones)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
+                        <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${metrics.sobrante > 0 ? 'text-green-600' : metrics.faltante > 0 ? 'text-red-600' : ''}`}>
+                          {metrics.sobrante > 0 ? `+${formatCOP(metrics.sobrante)}` : metrics.faltante > 0 ? `-${formatCOP(metrics.faltante)}` : '$0'}
+                        </td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4">
+                          <div className="flex gap-2 items-center">
+                            <button
+                              onClick={() => router.push(`/admin/cuadre/${cuadre.id}`)}
+                              className="text-primary hover:text-primary/80 font-medium text-xs sm:text-sm"
+                            >
+                              Ver
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCuadre(cuadre.id)}
+                              disabled={deleting === cuadre.id}
+                              className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                            >
+                              {deleting === cuadre.id ? (
+                                <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

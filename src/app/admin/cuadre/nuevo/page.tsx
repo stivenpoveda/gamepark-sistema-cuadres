@@ -393,7 +393,7 @@ export default function CuadreWizard() {
                 consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
               }
             : {
-                url_foto_consignacion: undefined,
+                url_foto_consignacion: null,
                 valor_consignado: 0,
                 consignacion_pendiente: totalEfectivoConPendiente,
               }
@@ -860,7 +860,7 @@ export default function CuadreWizard() {
                         setValorConsignadoInput(0);
                         setNuevoPendienteConsignacion(totalEfectivoConPendiente);
                         if (cuadre?.url_foto_consignacion) {
-                          await saveCuadre({ url_foto_consignacion: undefined });
+                          await saveCuadre({ url_foto_consignacion: null });
                         }
                         await saveCuadre({ consigna_hoy: false });
                       }}
@@ -899,8 +899,8 @@ export default function CuadreWizard() {
                     bucket="soportes"
                     currentUrl={cuadre?.url_foto_consignacion}
                     onUpload={handleFotoConsignacionUpload}
-                    onRemove={() => {
-                      saveCuadre({ url_foto_consignacion: undefined });
+                    onRemove={async () => {
+                      await saveCuadre({ url_foto_consignacion: null, valor_consignado: 0 });
                       setReadyToSend(false);
                       setNuevoPendienteConsignacion(null);
                       setValorConsignadoInput('');
@@ -1125,9 +1125,10 @@ export default function CuadreWizard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Horario</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cédula</label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={newTurnero.horario || ''}
                   onChange={(e) => setNewTurnero({ ...newTurnero, horario: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg"
