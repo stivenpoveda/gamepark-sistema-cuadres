@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
+import {
+  calcCuadreMetrics,
+  formatCOP,
+  formatDate,
+  GASTO_CATEGORIA_TRANSPORTE_LABEL,
+  getGastoCategoriaLabel,
+} from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import type { CuadreDiario, Usuario } from '@/types';
@@ -215,7 +221,7 @@ export default function CuadreDetalle() {
       'Pagos Tecnico - Auditor Mecanico',
       'Servicio Publicos y Telefono',
       'Turnos',
-      'Transporte, Fletes y Acarreos Maquinaria y Repuestos',
+      GASTO_CATEGORIA_TRANSPORTE_LABEL,
       'Fiestas',
       'Compra redencion',
       'Peluches',
@@ -234,7 +240,7 @@ export default function CuadreDetalle() {
 
     if (cuadre.gastos_diarios) {
       cuadre.gastos_diarios.forEach((g) => {
-        const categoria = g.categoria || 'Otros';
+        const categoria = getGastoCategoriaLabel(g.categoria || 'Otros');
         gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + (Number(g.valor) || 0);
         if (g.descripcion) {
           detallesPorCategoria[categoria] = detallesPorCategoria[categoria] || [];
@@ -262,12 +268,15 @@ export default function CuadreDetalle() {
     ];
     const totalIngresos = operacionales.reduce((sum, r) => sum + r.value, 0);
 
+    const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado || 0);
+
     const sec2 = [
       { label: 'Efectivo en cajx consignar (-Retiros)', value: Number(pendienteInicial || 0), highlight: true },
       { label: 'Venta Datafono', value: Number(cuadre.venta_tarjetas || 0) },
-      { label: 'Consignaciones Bancos caja menor', value: 0 },
+      { label: 'Consignaciones', value: consignaciones },
     ];
-    const totalSec2 = totalIngresos + Number(pendienteInicial || 0) - Number(cuadre.venta_tarjetas || 0);
+    const totalSec2 =
+      totalIngresos + Number(pendienteInicial || 0) - Number(cuadre.venta_tarjetas || 0) - consignaciones;
 
     const totalGastosArqueo = gastosArqueo.reduce((sum, cat) => sum + (gastosPorCategoria[cat] || 0), 0);
     const totalEnCaja = totalSec2 - totalGastosArqueo;
@@ -469,6 +478,7 @@ export default function CuadreDetalle() {
     const worksheet = workbook.addWorksheet('ARQUEO FISCAL');
 
     const efectivoCajaConsignar = pendienteInicial;
+    const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado || 0);
 
     // Establecer anchos de columna
     worksheet.columns = [
@@ -660,8 +670,8 @@ export default function CuadreDetalle() {
     worksheet.getCell('C18').alignment = { horizontal: 'right' };
     applyBorders('B18', 'D18');
 
-    worksheet.getCell('B19').value = 'Consignaciones Bancos caja menor';
-    worksheet.getCell('C19').value = 0;
+    worksheet.getCell('B19').value = 'Consignaciones';
+    worksheet.getCell('C19').value = consignaciones;
     worksheet.getCell('C19').numFmt = '#,##0';
     worksheet.getCell('C19').alignment = { horizontal: 'right' };
     applyBorders('B19', 'D19');
@@ -670,7 +680,7 @@ export default function CuadreDetalle() {
     worksheet.getCell('B21').value = 'TOTAL';
     worksheet.getCell('B21').font = { bold: true };
     worksheet.getCell('B21').alignment = { horizontal: 'right' };
-    worksheet.getCell('C21').value = { formula: '=C14+C17-C18' };
+    worksheet.getCell('C21').value = { formula: '=C14+C17-C18-C19' };
     worksheet.getCell('C21').font = { bold: true };
     worksheet.getCell('C21').numFmt = '#,##0';
     worksheet.getCell('C21').alignment = { horizontal: 'right' };
@@ -738,7 +748,7 @@ export default function CuadreDetalle() {
       'Pagos Tecnico - Auditor Mecanico',
       'Servicio Publicos y Telefono',
       'Turnos',
-      'Transporte, Fletes y Acarreos Maquinaria y Repuestos',
+      GASTO_CATEGORIA_TRANSPORTE_LABEL,
       'Fiestas',
       'Compra redencion',
       'Peluches',
@@ -758,10 +768,11 @@ export default function CuadreDetalle() {
 
     if (cuadre.gastos_diarios) {
       cuadre.gastos_diarios.forEach((g) => {
-        gastosPorCategoria[g.categoria] = (gastosPorCategoria[g.categoria] || 0) + g.valor;
+        const cat = getGastoCategoriaLabel(g.categoria || 'Otros');
+        gastosPorCategoria[cat] = (gastosPorCategoria[cat] || 0) + (Number(g.valor) || 0);
         if (g.descripcion) {
-          detallesPorCategoria[g.categoria] = detallesPorCategoria[g.categoria] || [];
-          detallesPorCategoria[g.categoria].push(g.descripcion);
+          detallesPorCategoria[cat] = detallesPorCategoria[cat] || [];
+          detallesPorCategoria[cat].push(g.descripcion);
         }
       });
     }
@@ -1104,7 +1115,7 @@ export default function CuadreDetalle() {
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-medium text-gray-800">{g.descripcion}</p>
-                            <p className="text-sm text-gray-600">{g.categoria}</p>
+                            <p className="text-sm text-gray-600">{getGastoCategoriaLabel(g.categoria)}</p>
                           </div>
                           <p className="font-bold text-gray-900">{formatCOP(g.valor)}</p>
                         </div>

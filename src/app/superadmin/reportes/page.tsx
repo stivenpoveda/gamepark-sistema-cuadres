@@ -284,6 +284,37 @@ export default function SuperadminReportesPage() {
     toast.success('Reporte exportado exitosamente');
   };
 
+  const exportarExcelDatafono = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Datafono');
+
+    worksheet.columns = [
+      { header: 'Punto de Venta', key: 'pdv', width: 25 },
+      { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Venta Datafono', key: 'ventaDatafono', width: 18 },
+    ];
+
+    cuadresFiltrados.forEach((c) => {
+      worksheet.addRow({
+        pdv: c.punto_de_venta?.nombre || 'N/A',
+        fecha: new Date(c.fecha).toLocaleDateString(),
+        ventaDatafono: formatCOP(c.venta_tarjetas),
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_venta_datafono.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Reporte exportado exitosamente');
+  };
+
   const exportarExcelConsignaciones = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Consignaciones');
@@ -616,6 +647,18 @@ export default function SuperadminReportesPage() {
               <p className="text-sm text-gray-600 mt-1">Venta total, datafono y efectivo esperado.</p>
               <button
                 onClick={exportarExcelVentas}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                <FileText className="w-4 h-4" />
+                Descargar Excel
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="font-semibold text-gray-900">Venta Datafono</p>
+              <p className="text-sm text-gray-600 mt-1">Venta por datafono por día y punto de venta.</p>
+              <button
+                onClick={exportarExcelDatafono}
                 className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
               >
                 <FileText className="w-4 h-4" />

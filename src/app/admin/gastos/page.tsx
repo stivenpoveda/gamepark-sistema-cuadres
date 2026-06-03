@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP } from '@/lib/utils';
+import { formatCOP, getGastoCategoriaLabel, GASTO_CATEGORIA_TRANSPORTE_CODE, normalizeGastoCategoria } from '@/lib/utils';
 import { Loader2, ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { GastoDiario, Usuario, PuntoDeVenta } from '@/types';
@@ -10,22 +10,22 @@ import UploadFoto from '@/components/UploadFoto';
 import toast from 'react-hot-toast';
 
 const categoriasGastos = [
-  'Mantenimiento y Reparaciones',
-  'Pagos Tecnico - Auditor Mecanico',
-  'Servicio Publicos y Telefono',
-  'Turnos',
-  'Transporte, Fletes y Acarreos Maquinaria y Repuestos',
-  'Fiestas',
-  'Compra redencion',
-  'Peluches',
-  'Utiles-Papeleria y Fotocopias',
-  'Base Refrigierios y H20',
-  'Bioseguridad',
-  'Publicidad y avisos varios',
-  'Compra de aseo',
-  'Viaticos-Pago hotel',
-  'Tarjetas malas y devoluciones',
-  'Otros'
+  { value: 'Mantenimiento y Reparaciones', label: 'Mantenimiento y Reparaciones' },
+  { value: 'Pagos Tecnico - Auditor Mecanico', label: 'Pagos Tecnico - Auditor Mecanico' },
+  { value: 'Servicio Publicos y Telefono', label: 'Servicio Publicos y Telefono' },
+  { value: 'Turnos', label: 'Turnos' },
+  { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos Maquinaria y Repuestos' },
+  { value: 'Fiestas', label: 'Fiestas' },
+  { value: 'Compra redencion', label: 'Compra redencion' },
+  { value: 'Peluches', label: 'Peluches' },
+  { value: 'Utiles-Papeleria y Fotocopias', label: 'Utiles-Papeleria y Fotocopias' },
+  { value: 'Base Refrigierios y H20', label: 'Base Refrigierios y H20' },
+  { value: 'Bioseguridad', label: 'Bioseguridad' },
+  { value: 'Publicidad y avisos varios', label: 'Publicidad y avisos varios' },
+  { value: 'Compra de aseo', label: 'Compra de aseo' },
+  { value: 'Viaticos-Pago hotel', label: 'Viaticos-Pago hotel' },
+  { value: 'Tarjetas malas y devoluciones', label: 'Tarjetas malas y devoluciones' },
+  { value: 'Otros', label: 'Otros' },
 ];
 
 export default function GastosPage() {
@@ -36,7 +36,7 @@ export default function GastosPage() {
   const [gastos, setGastos] = useState<GastoDiario[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [newGasto, setNewGasto] = useState<Partial<GastoDiario>>({
-    categoria: 'general',
+    categoria: 'Otros',
   });
 
   useEffect(() => {
@@ -86,49 +86,68 @@ export default function GastosPage() {
   }, []);
 
   const handleAddGasto = async () => {
-    if (!user?.punto_de_venta_id || !newGasto.descripcion || !newGasto.valor) return;
+    if (!user?.punto_de_venta_id) return;
+    if (!newGasto.descripcion || !newGasto.valor) {
+      toast.error('Completa la descripción y el valor del gasto');
+      return;
+    }
 
-    const today = new Date().toISOString().split('T')[0];
-    const { data: cuadreData } = await supabase
-      .from('cuadres_diarios')
-      .select('id')
-      .eq('punto_de_venta_id', user.punto_de_venta_id)
-      .eq('fecha', today)
-      .single();
-
-    let cuadreId = cuadreData?.id;
-    if (!cuadreId) {
-      const { data: newCuadre } = await supabase
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: cuadreData, error: cuadreError } = await supabase
         .from('cuadres_diarios')
+        .select('id')
+        .eq('punto_de_venta_id', user.punto_de_venta_id)
+        .eq('fecha', today)
+        .single();
+
+      if (cuadreError && cuadreError.code !== 'PGRST116') {
+        throw cuadreError;
+      }
+
+      let cuadreId = cuadreData?.id as string | undefined;
+      if (!cuadreId) {
+        const { data: newCuadre, error: newCuadreError } = await supabase
+          .from('cuadres_diarios')
+          .insert({
+            punto_de_venta_id: user.punto_de_venta_id,
+            usuario_id: user.id,
+            fecha: today,
+            estado: 'borrador',
+          })
+          .select()
+          .single();
+        if (newCuadreError) throw newCuadreError;
+        cuadreId = newCuadre?.id;
+      }
+
+      if (!cuadreId) throw new Error('No se pudo obtener el cuadre del día');
+
+      const { data, error } = await supabase
+        .from('gastos_diarios')
         .insert({
-          punto_de_venta_id: user.punto_de_venta_id,
-          usuario_id: user.id,
+          cuadre_id: cuadreId,
+          descripcion: newGasto.descripcion,
+          categoria: normalizeGastoCategoria(newGasto.categoria || 'Otros'),
+          valor: newGasto.valor,
+          url_foto_factura: newGasto.url_foto_factura,
           fecha: today,
-          estado: 'borrador',
+          registrado_por: user.id,
         })
         .select()
         .single();
-      cuadreId = newCuadre?.id;
+
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo guardar el gasto');
+
+      setGastos((prev) => [data, ...prev]);
+      setNewGasto({ categoria: 'Otros' });
+      setShowModal(false);
+      toast.success('Gasto agregado');
+    } catch (error: any) {
+      console.error('Error al agregar gasto:', error);
+      toast.error(`Error al agregar gasto: ${error?.message || 'Intenta de nuevo'}`);
     }
-
-    const { data } = await supabase
-      .from('gastos_diarios')
-      .insert({
-        cuadre_id: cuadreId,
-        descripcion: newGasto.descripcion,
-        categoria: newGasto.categoria || 'general',
-        valor: newGasto.valor,
-        url_foto_factura: newGasto.url_foto_factura,
-        fecha: today,
-        registrado_por: user.id,
-      })
-      .select()
-      .single();
-
-    setGastos([data, ...gastos]);
-    setNewGasto({ categoria: 'general' });
-    setShowModal(false);
-    toast.success('Gasto agregado');
   };
 
   const handleDeleteGasto = async (id: string) => {
@@ -190,7 +209,7 @@ export default function GastosPage() {
             <div key={gasto.id} className="bg-white p-6 rounded-xl shadow-md flex justify-between items-start">
               <div>
                 <p className="font-medium">{gasto.descripcion}</p>
-                <p className="text-sm text-gray-500">{gasto.categoria}</p>
+                <p className="text-sm text-gray-500">{getGastoCategoriaLabel(gasto.categoria)}</p>
                 <p className="text-sm text-gray-400">{new Date(gasto.fecha).toLocaleDateString()}</p>
                 {gasto.url_foto_factura && (
                   <img
@@ -235,12 +254,12 @@ export default function GastosPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
                   <select
-                    value={newGasto.categoria || 'general'}
+                    value={newGasto.categoria || 'Otros'}
                     onChange={(e) => setNewGasto({ ...newGasto, categoria: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                   >
                     {categoriasGastos.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c.value} value={c.value}>{c.label}</option>
                     ))}
                   </select>
                 </div>

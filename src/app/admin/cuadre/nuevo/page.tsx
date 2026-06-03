@@ -2,31 +2,38 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
+import {
+  calcCuadreMetrics,
+  formatCOP,
+  formatDate,
+  getGastoCategoriaLabel,
+  getTodayString,
+  GASTO_CATEGORIA_TRANSPORTE_CODE,
+  normalizeGastoCategoria,
+} from '@/lib/utils';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import type { CuadreDiario, Usuario, PuntoDeVenta, DenominacionCuadre, GastoDiario, PagoTurnero, SupabaseError } from '@/types';
+import type { CuadreDiario, Usuario, PuntoDeVenta, GastoDiario, PagoTurnero, SupabaseError } from '@/types';
 import UploadFoto from '@/components/UploadFoto';
 import toast from 'react-hot-toast';
 
-const denominacionesList = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
 const categoriasGastos = [
-  'Mantenimiento y Reparaciones',
-  'Pagos Tecnico - Auditor Mecanico',
-  'Servicio Publicos y Telefono',
-  'Turnos',
-  'Transporte, Fletes y Acarreos Maquinaria y Repuestos',
-  'Fiestas',
-  'Compra redencion',
-  'Peluches',
-  'Utiles-Papeleria y Fotocopias',
-  'Base Refrigierios y H20',
-  'Bioseguridad',
-  'Publicidad y avisos varios',
-  'Compra de aseo',
-  'Viaticos-Pago hotel',
-  'Tarjetas malas y devoluciones',
-  'Otros'
+  { value: 'Mantenimiento y Reparaciones', label: 'Mantenimiento y Reparaciones' },
+  { value: 'Pagos Tecnico - Auditor Mecanico', label: 'Pagos Tecnico - Auditor Mecanico' },
+  { value: 'Servicio Publicos y Telefono', label: 'Servicio Publicos y Telefono' },
+  { value: 'Turnos', label: 'Turnos' },
+  { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos Maquinaria y Repuestos' },
+  { value: 'Fiestas', label: 'Fiestas' },
+  { value: 'Compra redencion', label: 'Compra redencion' },
+  { value: 'Peluches', label: 'Peluches' },
+  { value: 'Utiles-Papeleria y Fotocopias', label: 'Utiles-Papeleria y Fotocopias' },
+  { value: 'Base Refrigierios y H20', label: 'Base Refrigierios y H20' },
+  { value: 'Bioseguridad', label: 'Bioseguridad' },
+  { value: 'Publicidad y avisos varios', label: 'Publicidad y avisos varios' },
+  { value: 'Compra de aseo', label: 'Compra de aseo' },
+  { value: 'Viaticos-Pago hotel', label: 'Viaticos-Pago hotel' },
+  { value: 'Tarjetas malas y devoluciones', label: 'Tarjetas malas y devoluciones' },
+  { value: 'Otros', label: 'Otros' },
 ];
 
 export default function CuadreWizard() {
@@ -37,9 +44,6 @@ export default function CuadreWizard() {
   const [user, setUser] = useState<Usuario | null>(null);
   const [puntoVenta, setPuntoVenta] = useState<PuntoDeVenta | null>(null);
   const [cuadre, setCuadre] = useState<CuadreDiario | null>(null);
-  const [denominaciones, setDenominaciones] = useState<DenominacionCuadre[]>(
-    denominacionesList.map((d) => ({ id: '', cuadre_id: '', denominacion: d, cantidad: 0, valor_total: 0 }))
-  );
   const [gastos, setGastos] = useState<GastoDiario[]>([]);
   const [turneros, setTurneros] = useState<PagoTurnero[]>([]);
   const [showGastoModal, setShowGastoModal] = useState(false);
@@ -125,8 +129,7 @@ export default function CuadreWizard() {
         if (existingCuadre && !cuadreError) {
           // El cuadre ya existe, lo cargamos
           // Cargamos las relaciones por separado
-          const [denominacionesRes, gastosRes, turnerosRes] = await Promise.all([
-            supabase.from('denominaciones_cuadre').select('*').eq('cuadre_id', existingCuadre.id),
+          const [gastosRes, turnerosRes] = await Promise.all([
             supabase.from('gastos_diarios').select('*').eq('cuadre_id', existingCuadre.id),
             supabase.from('pagos_turneros').select('*').eq('cuadre_id', existingCuadre.id),
           ]);
@@ -140,7 +143,6 @@ export default function CuadreWizard() {
           const cuadreCompleto = {
             ...existingCuadre,
             consignacion_pendiente: shouldApplyPendienteArrastre ? pendienteArrastre : existingCuadre.consignacion_pendiente,
-            denominaciones_cuadre: denominacionesRes.data,
             gastos_diarios: gastosRes.data,
             pagos_turneros: turnerosRes.data,
           };
@@ -152,15 +154,6 @@ export default function CuadreWizard() {
               .from('cuadres_diarios')
               .update({ consignacion_pendiente: pendienteArrastre, updated_at: new Date().toISOString() })
               .eq('id', existingCuadre.id);
-          }
-          if (cuadreCompleto.denominaciones_cuadre) {
-            const existingDens = cuadreCompleto.denominaciones_cuadre;
-            setDenominaciones(
-              denominacionesList.map((d) => {
-                const existing = existingDens.find((ed: DenominacionCuadre) => ed.denominacion === d);
-                return existing || { id: '', cuadre_id: '', denominacion: d, cantidad: 0, valor_total: 0 };
-              })
-            );
           }
           if (cuadreCompleto.gastos_diarios) setGastos(cuadreCompleto.gastos_diarios);
           if (cuadreCompleto.pagos_turneros) setTurneros(cuadreCompleto.pagos_turneros);
@@ -281,10 +274,9 @@ export default function CuadreWizard() {
         }
       }
 
-      // Combinar la data guardada con las relaciones (denominaciones, gastos, etc.) que teníamos antes
+      // Combinar la data guardada con las relaciones (gastos, etc.) que teníamos antes
       const updatedCuadre = {
         ...data,
-        denominaciones_cuadre: cuadre.denominaciones_cuadre,
         gastos_diarios: cuadre.gastos_diarios,
         pagos_turneros: cuadre.pagos_turneros,
         punto_de_venta: cuadre.punto_de_venta,
@@ -301,27 +293,6 @@ export default function CuadreWizard() {
     }
   };
 
-  const saveDenominaciones = async () => {
-    if (!cuadre?.id) return;
-    setSaving(true);
-    try {
-      await supabase.from('denominaciones_cuadre').delete().eq('cuadre_id', cuadre.id);
-      const densToSave = denominaciones.map((d) => ({
-        cuadre_id: cuadre.id,
-        denominacion: d.denominacion,
-        cantidad: d.cantidad,
-        valor_total: d.denominacion * d.cantidad,
-      }));
-      await supabase.from('denominaciones_cuadre').insert(densToSave);
-    } catch (error) {
-      toast.error('Error al guardar denominaciones');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const totalFisico = denominaciones.reduce((sum, d) => sum + d.denominacion * d.cantidad, 0);
-
   // Total Ventas por Medio (solo para información)
   const totalVentasMedio =
     (localCuadre?.venta_tarjetas || 0) +
@@ -336,7 +307,6 @@ export default function CuadreWizard() {
     consignacion_pendiente: localCuadre?.consignacion_pendiente,
     gastos,
     turneros,
-    total_fisico: totalFisico,
   });
 
   const totalGastos = cuadreMetrics.totalGastos;
@@ -346,8 +316,6 @@ export default function CuadreWizard() {
   const ventaDatafono = cuadreMetrics.ventaDatafono;
   const totalEfectivoEsperado = cuadreMetrics.totalEfectivoEsperado;
   const totalEfectivoConPendiente = cuadreMetrics.totalGeneralAConsignar;
-  const sobrante = cuadreMetrics.sobrante;
-  const faltante = cuadreMetrics.faltante;
 
   const tarFinal =
     (localCuadre?.tar_inicial || 0) -
@@ -360,8 +328,7 @@ export default function CuadreWizard() {
   const nextStep = async () => {
     // Save local state to database before moving to next step
     await saveCuadre(localCuadre);
-    if (step === 5) await saveDenominaciones();
-    if (step < 7) setStep(step + 1);
+    if (step < 6) setStep(step + 1);
   };
 
   const prevStep = () => {
@@ -372,17 +339,15 @@ export default function CuadreWizard() {
     if (!cuadre?.id) return;
     setSaving(true);
     try {
-      await saveDenominaciones();
-      
       const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
       const nuevoEstado = consignaHoy ? (cuadre.url_foto_consignacion ? 'enviado' : 'pendiente') : 'enviado';
       
       const updates = {
         ...localCuadre,
-        total_fisico: totalFisico,
+        total_fisico: 0,
         total_sistema: totalEfectivoEsperado,
-        sobrante,
-        faltante,
+        sobrante: 0,
+        faltante: 0,
         tar_final: tarFinal,
         estado: nuevoEstado as 'enviado' | 'pendiente',
         fecha_envio: new Date().toISOString(),
@@ -439,55 +404,103 @@ export default function CuadreWizard() {
   };
 
   const handleAddGasto = async () => {
-    if (!cuadre?.id || !newGasto.descripcion || !newGasto.valor) return;
-    const { data } = await supabase
-      .from('gastos_diarios')
-      .insert({
-        cuadre_id: cuadre.id,
-        descripcion: newGasto.descripcion,
-        categoria: newGasto.categoria || 'Otros',
-        valor: newGasto.valor,
-        url_foto_factura: newGasto.url_foto_factura,
-        fecha: cuadre.fecha,
-        registrado_por: user?.id,
-      })
-      .select()
-      .single();
-    setGastos([...gastos, data]);
-    setNewGasto({});
-    setShowGastoModal(false);
-    toast.success('Gasto agregado');
+    if (!cuadre?.id) return;
+    if (!newGasto.descripcion || !newGasto.valor) {
+      toast.error('Completa la descripción y el valor del gasto');
+      return;
+    }
+    if (!user?.id) {
+      toast.error('Sesión no lista. Recarga la página e intenta de nuevo.');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('gastos_diarios')
+        .insert({
+          cuadre_id: cuadre.id,
+          descripcion: newGasto.descripcion,
+          categoria: normalizeGastoCategoria(newGasto.categoria || 'Otros'),
+          valor: newGasto.valor,
+          url_foto_factura: newGasto.url_foto_factura,
+          fecha: cuadre.fecha,
+          registrado_por: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo guardar el gasto');
+
+      setGastos((prev) => [...prev, data]);
+      setNewGasto({});
+      setShowGastoModal(false);
+      toast.success('Gasto agregado');
+    } catch (error: any) {
+      console.error('Error al agregar gasto:', error);
+      toast.error(`Error al agregar gasto: ${error?.message || 'Intenta de nuevo'}`);
+    }
   };
 
   const handleDeleteGasto = async (id: string) => {
-    await supabase.from('gastos_diarios').delete().eq('id', id);
-    setGastos(gastos.filter((g) => g.id !== id));
+    try {
+      const { error } = await supabase.from('gastos_diarios').delete().eq('id', id);
+      if (error) throw error;
+      setGastos((prev) => prev.filter((g) => g.id !== id));
+    } catch (error: any) {
+      console.error('Error al eliminar gasto:', error);
+      toast.error(`Error al eliminar gasto: ${error?.message || 'Intenta de nuevo'}`);
+    }
   };
 
   const handleAddTurnero = async () => {
-    if (!cuadre?.id || !newTurnero.nombre_turnero || !newTurnero.valor) return;
-    const { data } = await supabase
-      .from('pagos_turneros')
-      .insert({
-        cuadre_id: cuadre.id,
-        nombre_turnero: newTurnero.nombre_turnero,
-        valor: newTurnero.valor,
-        horario: newTurnero.horario,
-        url_foto_soporte: newTurnero.url_foto_soporte,
-        fecha: cuadre.fecha,
-        registrado_por: user?.id,
-      })
-      .select()
-      .single();
-    setTurneros([...turneros, data]);
-    setNewTurnero({});
-    setShowTurneroModal(false);
-    toast.success('Turnero agregado');
+    if (!cuadre?.id) return;
+    if (!newTurnero.nombre_turnero || !newTurnero.valor) {
+      toast.error('Completa el nombre y el valor del turnero');
+      return;
+    }
+    if (!user?.id) {
+      toast.error('Sesión no lista. Recarga la página e intenta de nuevo.');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('pagos_turneros')
+        .insert({
+          cuadre_id: cuadre.id,
+          nombre_turnero: newTurnero.nombre_turnero,
+          valor: newTurnero.valor,
+          horario: newTurnero.horario,
+          url_foto_soporte: newTurnero.url_foto_soporte,
+          fecha: cuadre.fecha,
+          registrado_por: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error('No se pudo guardar el turnero');
+
+      setTurneros((prev) => [...prev, data]);
+      setNewTurnero({});
+      setShowTurneroModal(false);
+      toast.success('Turnero agregado');
+    } catch (error: any) {
+      console.error('Error al agregar turnero:', error);
+      toast.error(`Error al agregar turnero: ${error?.message || 'Intenta de nuevo'}`);
+    }
   };
 
   const handleDeleteTurnero = async (id: string) => {
-    await supabase.from('pagos_turneros').delete().eq('id', id);
-    setTurneros(turneros.filter((t) => t.id !== id));
+    try {
+      const { error } = await supabase.from('pagos_turneros').delete().eq('id', id);
+      if (error) throw error;
+      setTurneros((prev) => prev.filter((t) => t.id !== id));
+    } catch (error: any) {
+      console.error('Error al eliminar turnero:', error);
+      toast.error(`Error al eliminar turnero: ${error?.message || 'Intenta de nuevo'}`);
+    }
   };
 
   if (loading) {
@@ -503,7 +516,6 @@ export default function CuadreWizard() {
     'Venta Sistema',
     'Ventas por Medio',
     'Gastos y Turneros',
-    'Billetes y Monedas',
     'Tarjetas (TAR)',
     'Consignación y Envío',
   ];
@@ -654,7 +666,7 @@ export default function CuadreWizard() {
                     <div key={g.id} className="p-4 border rounded-lg flex justify-between items-center">
                       <div>
                         <p className="font-medium">{g.descripcion}</p>
-                        <p className="text-sm text-gray-500">{g.categoria}</p>
+                        <p className="text-sm text-gray-500">{getGastoCategoriaLabel(g.categoria)}</p>
                         {g.url_foto_factura && (
                           <img src={g.url_foto_factura} alt="Factura" className="w-20 h-20 object-cover rounded mt-2" />
                         )}
@@ -732,74 +744,7 @@ export default function CuadreWizard() {
 
           {step === 5 && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Paso 5: Billetes y Monedas</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-light">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Denominación</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Cantidad</th>
-                      <th className="px-4 py-3 text-left text-sm font-semibold">Valor Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {denominaciones.map((d, i) => (
-                      <tr key={i}>
-                        <td className="px-4 py-3 text-sm font-medium">{formatCOP(d.denominacion)}</td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="number"
-                            value={d.cantidad}
-                            onChange={(e) => {
-                              const newDens = [...denominaciones];
-                              newDens[i].cantidad = Number(e.target.value) || 0;
-                              setDenominaciones(newDens);
-                            }}
-                            className="w-24 px-3 py-2 border border-gray-300 rounded-lg"
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium">{formatCOP(d.denominacion * d.cantidad)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-6 space-y-3">
-                <div className="p-4 bg-orange-200 rounded-lg border border-orange-300">
-                  <p className="text-sm text-orange-900 font-bold">Total General a Consignar</p>
-                  <p className="text-3xl font-bold text-orange-900">{formatCOP(totalEfectivoConPendiente)}</p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-green-700">Valor a Consignar Hoy</p>
-                  <p className="text-xl font-bold text-green-700">{formatCOP(totalEfectivoEsperado)}</p>
-                </div>
-                {(localCuadre?.consignacion_pendiente || 0) > 0 && (
-                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                    <p className="text-sm text-orange-800 font-medium">Pendiente al Iniciar (Días Anteriores)</p>
-                    <p className="text-2xl font-bold text-orange-800">{formatCOP(localCuadre?.consignacion_pendiente || 0)}</p>
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-700">Total Físico Contado</p>
-                  <p className="text-xl font-bold text-blue-700">{formatCOP(totalFisico)}</p>
-                </div>
-                <div className={`p-4 rounded-lg ${sobrante > 0 ? 'bg-green-50' : faltante > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                  <p className={`text-sm ${sobrante > 0 ? 'text-green-700' : faltante > 0 ? 'text-red-700' : 'text-gray-700'}`}>
-                    {sobrante > 0 ? 'Sobrante' : faltante > 0 ? 'Faltante' : 'Diferencia'}
-                  </p>
-                  <p className={`text-xl font-bold ${sobrante > 0 ? 'text-green-700' : faltante > 0 ? 'text-red-700' : 'text-gray-700'}`}>
-                    {sobrante > 0 ? formatCOP(Number(sobrante)) : faltante > 0 ? formatCOP(Number(faltante)) : '$0'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 6 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Paso 6: Tarjetas (TAR)</h2>
+              <h2 className="text-xl font-semibold mb-4">Paso 5: Tarjetas (TAR)</h2>
               {[
                 { label: 'TAR Inicial', key: 'tar_inicial' },
                 { label: 'TAR Consumo', key: 'tar_consumo' },
@@ -823,9 +768,9 @@ export default function CuadreWizard() {
             </div>
           )}
 
-          {step === 7 && (
+          {step === 6 && (
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold mb-4">Paso 7: Consignación y Envío</h2>
+              <h2 className="text-xl font-semibold mb-4">Paso 6: Consignación y Envío</h2>
               
               <div className="p-4 bg-white border border-gray-200 rounded-lg">
                 <p className="font-medium text-gray-800">¿Vas a consignar hoy?</p>
@@ -906,19 +851,17 @@ export default function CuadreWizard() {
                       setValorConsignadoInput('');
                     }}
                   />
-                  {cuadre?.url_foto_consignacion && (
-                    <button
-                      onClick={() => {
-                        setShowConsignacionModal(true);
-                        if (valorConsignadoInput === '') {
-                          setValorConsignadoInput(totalEfectivoConPendiente);
-                        }
-                      }}
-                      className="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                    >
-                      Editar Confirmación de Consignación
-                    </button>
-                  )}
+                  <button
+                    onClick={() => {
+                      setShowConsignacionModal(true);
+                      if (valorConsignadoInput === '') {
+                        setValorConsignadoInput(totalEfectivoConPendiente);
+                      }
+                    }}
+                    className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    {cuadre?.url_foto_consignacion ? 'Editar Confirmación de Consignación' : 'Confirmar Consignación'}
+                  </button>
                 </div>
               )}
               
@@ -951,7 +894,7 @@ export default function CuadreWizard() {
                 </div>
               </div>
 
-              {cuadre?.url_foto_consignacion && (readyToSend || valorConsignadoInput !== '') && (
+              {(readyToSend || valorConsignadoInput !== '') && (
                 <div className="p-4 bg-white rounded-lg border border-gray-200">
                   <div className="flex justify-between font-semibold text-lg">
                     <span className="text-gray-700">Valor Consignado</span>
@@ -980,18 +923,6 @@ export default function CuadreWizard() {
                 <div>
                   <p className="text-sm text-gray-600">Pendiente al Iniciar</p>
                   <p className="text-xl font-bold">{formatCOP(localCuadre?.consignacion_pendiente || 0)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Físico Contado</p>
-                  <p className="text-xl font-bold">{formatCOP(totalFisico)}</p>
-                </div>
-                <div className={`${sobrante > 0 ? 'text-success' : faltante > 0 ? 'text-danger' : ''}`}>
-                  <p className="text-sm">
-                    {sobrante > 0 ? 'Sobrante' : faltante > 0 ? 'Faltante' : 'Diferencia'}
-                  </p>
-                  <p className="text-xl font-bold">
-                    {sobrante > 0 ? formatCOP(Number(sobrante)) : faltante > 0 ? formatCOP(Number(faltante)) : '$0'}
-                  </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">TAR Final</p>
@@ -1034,7 +965,7 @@ export default function CuadreWizard() {
               Anterior
             </button>
           )}
-          {step < 7 && (
+          {step < 6 && (
             <button
               onClick={nextStep}
               disabled={saving}
@@ -1069,7 +1000,7 @@ export default function CuadreWizard() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                 >
                   {categoriasGastos.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>
               </div>

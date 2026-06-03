@@ -89,3 +89,29 @@ export const calcCuadreMetrics = (input: {
     faltante,
   };
 };
+
+export const GASTO_CATEGORIA_TRANSPORTE_CODE = 'Transporte/Fletes/Acarreos/Maq/Repuestos';
+export const GASTO_CATEGORIA_TRANSPORTE_LABEL = 'Transporte, Fletes y Acarreos Maquinaria y Repuestos';
+
+export const normalizeGastoCategoria = (categoria: unknown) => {
+  const raw = String(categoria ?? '').trim();
+  if (!raw) return 'Otros';
+  if (raw === GASTO_CATEGORIA_TRANSPORTE_CODE) return GASTO_CATEGORIA_TRANSPORTE_CODE;
+
+  const simplified = raw.toLowerCase().replace(/\s+/g, ' ');
+  const isTransporte =
+    simplified.includes('transporte') &&
+    (simplified.includes('fletes') || simplified.includes('flete')) &&
+    simplified.includes('acarreos') &&
+    simplified.includes('repuestos');
+
+  if (isTransporte) return GASTO_CATEGORIA_TRANSPORTE_CODE;
+
+  return raw.length > 50 ? raw.slice(0, 50) : raw;
+};
+
+export const getGastoCategoriaLabel = (categoria: unknown) => {
+  const normalized = normalizeGastoCategoria(categoria);
+  if (normalized === GASTO_CATEGORIA_TRANSPORTE_CODE) return GASTO_CATEGORIA_TRANSPORTE_LABEL;
+  return normalized;
+};
