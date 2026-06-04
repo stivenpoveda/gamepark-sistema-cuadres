@@ -266,12 +266,16 @@ export default function CuadreDetalle() {
       { label: 'Ventas no registrada', value: 0 },
       { label: 'Fiesta Infantil', value: Number(cuadre.venta_fiesta || 0) },
     ];
-    const totalIngresos = operacionales.reduce((sum, r) => sum + r.value, 0);
+    const totalIngresos = Number(cuadre.recaudo || 0);
 
     const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado || 0);
 
+    const creditoAnticipo = gastosPorCategoria['Anticipo a Contratistas y Otros'] || 0;
+    const creditoReembolso = gastosPorCategoria['Reembolso de Caja Menor'] || 0;
+    const totalCreditos = creditoAnticipo + creditoReembolso;
+
     const sec2 = [
-      { label: 'Efectivo en cajx consignar (-Retiros)', value: Number(pendienteInicial || 0), highlight: true },
+      { label: 'Efectivo en caja por consignar', value: Number(pendienteInicial || 0), highlight: true },
       { label: 'Venta Datafono', value: Number(cuadre.venta_tarjetas || 0) },
       { label: 'Consignaciones', value: consignaciones },
     ];
@@ -279,7 +283,7 @@ export default function CuadreDetalle() {
       totalIngresos + Number(pendienteInicial || 0) - Number(cuadre.venta_tarjetas || 0) - consignaciones;
 
     const totalGastosArqueo = gastosArqueo.reduce((sum, cat) => sum + (gastosPorCategoria[cat] || 0), 0);
-    const totalEnCaja = totalSec2 - totalGastosArqueo;
+    const totalEnCaja = totalSec2 - totalGastosArqueo - totalCreditos;
 
     const fileName = `ARQUEO_FISCAL_${(cuadre.punto_de_venta?.nombre || 'LOCAL').replace(/\s+/g, '_')}_${cuadre.fecha}.pdf`;
 
@@ -385,9 +389,21 @@ export default function CuadreDetalle() {
         </tr>
       </thead>
       <tbody>
-        <tr><td>Anticipo a Contratistas y Otros</td><td class="right">${escapeHtml(formatCOP(0))}</td><td></td></tr>
-        <tr><td>Reembolso de Caja Menor</td><td class="right">${escapeHtml(formatCOP(0))}</td><td></td></tr>
-        <tr class="total-row"><td class="right bold">TOTAL</td><td class="right bold">${escapeHtml(formatCOP(0))}</td><td></td></tr>
+        <tr>
+          <td>Anticipo a Contratistas y Otros</td>
+          <td class="right">${escapeHtml(formatCOP(creditoAnticipo))}</td>
+          <td class="wrap">${escapeHtml((detallesPorCategoria['Anticipo a Contratistas y Otros'] || []).join('\n'))}</td>
+        </tr>
+        <tr>
+          <td>Reembolso de Caja Menor</td>
+          <td class="right">${escapeHtml(formatCOP(creditoReembolso))}</td>
+          <td class="wrap">${escapeHtml((detallesPorCategoria['Reembolso de Caja Menor'] || []).join('\n'))}</td>
+        </tr>
+        <tr class="total-row">
+          <td class="right bold">TOTAL</td>
+          <td class="right bold">${escapeHtml(formatCOP(totalCreditos))}</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -479,6 +495,24 @@ export default function CuadreDetalle() {
 
     const efectivoCajaConsignar = pendienteInicial;
     const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado || 0);
+    const creditoAnticipoDetalles: string[] = [];
+    const creditoReembolsoDetalles: string[] = [];
+    let creditoAnticipo = 0;
+    let creditoReembolso = 0;
+
+    if (cuadre.gastos_diarios) {
+      cuadre.gastos_diarios.forEach((g) => {
+        const categoria = getGastoCategoriaLabel(g.categoria || 'Otros');
+        if (categoria === 'Anticipo a Contratistas y Otros') {
+          creditoAnticipo += Number(g.valor) || 0;
+          if (g.descripcion) creditoAnticipoDetalles.push(g.descripcion);
+        }
+        if (categoria === 'Reembolso de Caja Menor') {
+          creditoReembolso += Number(g.valor) || 0;
+          if (g.descripcion) creditoReembolsoDetalles.push(g.descripcion);
+        }
+      });
+    }
 
     // Establecer anchos de columna
     worksheet.columns = [
@@ -630,7 +664,7 @@ export default function CuadreDetalle() {
     worksheet.getCell('B14').value = 'TOTAL INGRESOS';
     worksheet.getCell('B14').font = { bold: true };
     worksheet.getCell('B14').alignment = { horizontal: 'right' };
-    worksheet.getCell('C14').value = { formula: '=C9+C10+C11+C12' };
+    worksheet.getCell('C14').value = { formula: '=C9' };
     worksheet.getCell('C14').font = { bold: true };
     worksheet.getCell('C14').numFmt = '#,##0';
     worksheet.getCell('C14').alignment = { horizontal: 'right' };
@@ -653,7 +687,7 @@ export default function CuadreDetalle() {
     };
     applyBorders('B16', 'D16');
 
-    worksheet.getCell('B17').value = 'Efectivo en cajx consignar (-Retiros)';
+    worksheet.getCell('B17').value = 'Efectivo en caja por consignar';
     worksheet.getCell('C17').value = efectivoCajaConsignar;
     worksheet.getCell('C17').numFmt = '#,##0';
     worksheet.getCell('C17').alignment = { horizontal: 'right' };
@@ -704,15 +738,19 @@ export default function CuadreDetalle() {
     applyBorders('B23', 'D23');
 
     worksheet.getCell('B24').value = 'Anticipo a Contratistas y Otros';
-    worksheet.getCell('C24').value = 0;
+    worksheet.getCell('C24').value = creditoAnticipo;
     worksheet.getCell('C24').numFmt = '#,##0';
     worksheet.getCell('C24').alignment = { horizontal: 'right' };
+    worksheet.getCell('D24').value = creditoAnticipoDetalles.join(', ');
+    worksheet.getCell('D24').alignment = { wrapText: true, vertical: 'top' };
     applyBorders('B24', 'D24');
 
     worksheet.getCell('B25').value = 'Reembolso de Caja Menor';
-    worksheet.getCell('C25').value = 0;
+    worksheet.getCell('C25').value = creditoReembolso;
     worksheet.getCell('C25').numFmt = '#,##0';
     worksheet.getCell('C25').alignment = { horizontal: 'right' };
+    worksheet.getCell('D25').value = creditoReembolsoDetalles.join(', ');
+    worksheet.getCell('D25').alignment = { wrapText: true, vertical: 'top' };
     applyBorders('B25', 'D25');
 
     // TOTAL sección 3
@@ -835,7 +873,7 @@ export default function CuadreDetalle() {
     };
     applyBorders(`B${filaTotalCaja}`, `D${filaTotalCaja}`);
     
-    worksheet.getCell(`C${filaTotalCaja}`).value = { formula: `=C21-C${filaActualGastos}` };
+    worksheet.getCell(`C${filaTotalCaja}`).value = { formula: `=C21-C${filaActualGastos}-C27` };
     worksheet.getCell(`C${filaTotalCaja}`).font = { bold: true, size: 14 };
     worksheet.getCell(`C${filaTotalCaja}`).numFmt = '#,##0';
     worksheet.getCell(`C${filaTotalCaja}`).alignment = { horizontal: 'center' };

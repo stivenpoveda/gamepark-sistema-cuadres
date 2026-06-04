@@ -25,6 +25,8 @@ const categoriasGastos = [
   { value: 'Compra de aseo', label: 'Compra de aseo' },
   { value: 'Viaticos-Pago hotel', label: 'Viaticos-Pago hotel' },
   { value: 'Tarjetas malas y devoluciones', label: 'Tarjetas malas y devoluciones' },
+  { value: 'Anticipo a Contratistas y Otros', label: 'Anticipo a Contratistas y Otros' },
+  { value: 'Reembolso de Caja Menor', label: 'Reembolso de Caja Menor' },
   { value: 'Otros', label: 'Otros' },
 ];
 
