@@ -92,10 +92,9 @@ export default function SuperadminReportesPage() {
 
   const totals = cuadresFiltrados.reduce(
     (acc, c) => {
-      acc.totalFisico += Number(c.total_fisico) || 0;
-      acc.ventaTotal += Number(c.recaudo) || 0;
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
+      const desembolsos = gastos + turneros;
       const metrics = calcCuadreMetrics({
         recaudo: c.recaudo,
         venta_tarjetas: c.venta_tarjetas,
@@ -109,29 +108,43 @@ export default function SuperadminReportesPage() {
         context: 'final',
       });
 
-      acc.valorGeneralAConsignar += metrics.totalGeneralAConsignar;
-      acc.ventaDatafono += Number(c.venta_tarjetas) || 0;
-      acc.valorConsignado += Number(c.valor_consignado) || 0;
-      acc.gastos += gastos;
-      acc.turneros += turneros;
-      acc.deducciones += gastos + turneros;
-      acc.sobrante += Number(c.sobrante) || 0;
-      acc.faltante += Number(c.faltante) || 0;
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+
+      acc.ventaTotal += Number(c.recaudo) || 0;
+      acc.datafono += Number(c.venta_tarjetas) || 0;
+      acc.desembolsos += desembolsos;
+      acc.efectivo += metrics.totalEfectivoEsperado;
+      acc.consignaciones += consignaciones;
       return acc;
     },
     {
-      totalFisico: 0,
       ventaTotal: 0,
-      valorGeneralAConsignar: 0,
-      ventaDatafono: 0,
-      valorConsignado: 0,
-      gastos: 0,
-      turneros: 0,
-      deducciones: 0,
-      sobrante: 0,
-      faltante: 0,
+      datafono: 0,
+      desembolsos: 0,
+      efectivo: 0,
+      consignaciones: 0,
     }
   );
+
+  const saldoEnCajaTotal = Object.values(
+    cuadresFiltrados.reduce<Record<string, { fecha: string; pendiente: number }>>((acc, c) => {
+      const pdvId = c.punto_de_venta_id || '';
+      if (!pdvId) return acc;
+
+      const fecha = c.fecha.split('T')[0];
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const cerrado = !consignaHoy || Boolean(c.url_foto_consignacion) || (Number(c.valor_consignado) || 0) > 0;
+      if (!cerrado) return acc;
+
+      const pendiente = Number(c.consignacion_pendiente) || 0;
+      const existing = acc[pdvId];
+      if (!existing || fecha > existing.fecha) {
+        acc[pdvId] = { fecha, pendiente };
+      }
+      return acc;
+    }, {})
+  ).reduce((sum, v) => sum + (Number(v.pendiente) || 0), 0);
 
   const exportarExcelGeneral = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -384,10 +397,10 @@ export default function SuperadminReportesPage() {
       pdv: string;
       pdvId: string;
       ventaTotal: number;
-      valorGeneralAConsignar: number;
-      ventaDatafono: number;
-      valorConsignado: number;
-      deducciones: number;
+      datafono: number;
+      desembolsos: number;
+      efectivo: number;
+      consignaciones: number;
       pendienteFinMes: number;
       _fechaMax: string;
     }> >((acc, c) => {
@@ -397,10 +410,10 @@ export default function SuperadminReportesPage() {
       const pdv = c.punto_de_venta?.nombre || 'N/A';
       const key = `${pdvId}|${mes}`;
       const ventaTotal = Number(c.recaudo) || 0;
-      const ventaDatafono = Number(c.venta_tarjetas) || 0;
-      const valorConsignado = Number(c.valor_consignado) || 0;
+      const datafono = Number(c.venta_tarjetas) || 0;
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
+      const desembolsos = gastos + turneros;
       const metrics = calcCuadreMetrics({
         recaudo: c.recaudo,
         venta_tarjetas: c.venta_tarjetas,
@@ -413,6 +426,8 @@ export default function SuperadminReportesPage() {
         total_fisico: c.total_fisico,
         context: 'final',
       });
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
       const pendiente = Number(c.consignacion_pendiente) || 0;
 
       if (!acc[key]) {
@@ -421,20 +436,20 @@ export default function SuperadminReportesPage() {
           pdv,
           pdvId,
           ventaTotal: 0,
-          valorGeneralAConsignar: 0,
-          ventaDatafono: 0,
-          valorConsignado: 0,
-          deducciones: 0,
+          datafono: 0,
+          desembolsos: 0,
+          efectivo: 0,
+          consignaciones: 0,
           pendienteFinMes: pendiente,
           _fechaMax: fecha,
         };
       }
 
       acc[key].ventaTotal += ventaTotal;
-      acc[key].valorGeneralAConsignar += metrics.totalGeneralAConsignar;
-      acc[key].ventaDatafono += ventaDatafono;
-      acc[key].valorConsignado += valorConsignado;
-      acc[key].deducciones += gastos + turneros;
+      acc[key].datafono += datafono;
+      acc[key].desembolsos += desembolsos;
+      acc[key].efectivo += metrics.totalEfectivoEsperado;
+      acc[key].consignaciones += consignaciones;
       if (fecha >= acc[key]._fechaMax) {
         acc[key]._fechaMax = fecha;
         acc[key].pendienteFinMes = pendiente;
@@ -581,34 +596,30 @@ export default function SuperadminReportesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
             <p className="text-sm text-gray-600">Venta Total</p>
             <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaTotal)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Valor General a Consignar</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorGeneralAConsignar)}</p>
+            <p className="text-sm text-gray-600">Datafono</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.datafono)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Venta Datafono</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaDatafono)}</p>
+            <p className="text-sm text-gray-600">Desembolsos</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.desembolsos)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Valor Consignado</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorConsignado)}</p>
+            <p className="text-sm text-gray-600">Efectivo</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.efectivo)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Deducciones (Gastos + Turneros)</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.deducciones)}</p>
+            <p className="text-sm text-gray-600">Consignaciones</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.consignaciones)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Total Sobrante</p>
-            <p className="text-2xl font-bold text-green-700">{formatCOP(totals.sobrante)}</p>
-          </div>
-          <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-sm text-gray-600">Total Faltante</p>
-            <p className="text-2xl font-bold text-red-700">{formatCOP(totals.faltante)}</p>
+            <p className="text-sm text-gray-600">Saldo en Caja</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(saldoEnCajaTotal)}</p>
           </div>
         </div>
 
@@ -707,7 +718,17 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(cuadre.recaudo)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Valor General a Consignar</p>
+                        <p className="text-gray-600">Datafono</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.venta_tarjetas)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Desembolsos</p>
+                        <p className="font-semibold text-gray-900">
+                          {formatCOP((gastosByCuadreId[cuadre.id] || 0) + (turnerosByCuadreId[cuadre.id] || 0))}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Efectivo</p>
                         <p className="font-semibold text-gray-900">
                           {formatCOP(
                             calcCuadreMetrics({
@@ -721,26 +742,18 @@ export default function SuperadminReportesPage() {
                               turneros: [{ valor: turnerosByCuadreId[cuadre.id] || 0 }],
                               total_fisico: cuadre.total_fisico,
                               context: 'final',
-                            }).totalGeneralAConsignar
+                            }).totalEfectivoEsperado
                           )}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Datafono</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.venta_tarjetas)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Consignado</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(cuadre.valor_consignado)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Deducciones</p>
+                        <p className="text-gray-600">Consignaciones</p>
                         <p className="font-semibold text-gray-900">
-                          {formatCOP((gastosByCuadreId[cuadre.id] || 0) + (turnerosByCuadreId[cuadre.id] || 0))}
+                          {formatCOP((cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0)}
                         </p>
                       </div>
                       <div className="col-span-2">
-                        <p className="text-gray-600">Pendiente</p>
+                        <p className="text-gray-600">Saldo en Caja</p>
                         <p className="font-semibold text-gray-900">{formatCOP(cuadre.consignacion_pendiente)}</p>
                       </div>
                     </div>
@@ -756,20 +769,18 @@ export default function SuperadminReportesPage() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[190px] whitespace-nowrap">Valor General a Consignar</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[140px] whitespace-nowrap">Datafono</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Pendiente</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Deducciones</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Total Físico</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[120px] whitespace-nowrap">Diferencia</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[150px] whitespace-nowrap">Desembolsos</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[150px] whitespace-nowrap">Efectivo</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignaciones</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Saldo en Caja</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {cuadresFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                       No hay cuadres para mostrar en este rango de fechas.
                     </td>
                   </tr>
@@ -777,6 +788,7 @@ export default function SuperadminReportesPage() {
                   cuadresFiltrados.map((cuadre) => {
                     const gastos = gastosByCuadreId[cuadre.id] || 0;
                     const turneros = turnerosByCuadreId[cuadre.id] || 0;
+                    const desembolsos = gastos + turneros;
                     const metrics = calcCuadreMetrics({
                       recaudo: cuadre.recaudo,
                       venta_tarjetas: cuadre.venta_tarjetas,
@@ -789,21 +801,18 @@ export default function SuperadminReportesPage() {
                       total_fisico: cuadre.total_fisico,
                       context: 'final',
                     });
+                    const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0;
 
                     return (
                       <tr key={cuadre.id} className="hover:bg-gray-50">
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.venta_tarjetas)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(desembolsos)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(metrics.totalEfectivoEsperado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(consignaciones)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(gastos + turneros)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
-                        <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${(Number(cuadre.sobrante) || 0) > 0 ? 'text-green-600' : (Number(cuadre.faltante) || 0) > 0 ? 'text-red-600' : ''}`}>
-                          {(Number(cuadre.sobrante) || 0) > 0 ? `+${formatCOP(Number(cuadre.sobrante))}` : (Number(cuadre.faltante) || 0) > 0 ? `-${formatCOP(Number(cuadre.faltante))}` : '$0'}
-                        </td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
                       </tr>
                     );
@@ -834,7 +843,7 @@ export default function SuperadminReportesPage() {
                         <p className="text-sm text-gray-600 truncate">{row.pdv}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-gray-600">Pendiente Fin</p>
+                        <p className="text-xs text-gray-600">Saldo en Caja</p>
                         <p className="font-semibold text-gray-900">{formatCOP(row.pendienteFinMes)}</p>
                       </div>
                     </div>
@@ -845,20 +854,20 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">{formatCOP(row.ventaTotal)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Valor General a Consignar</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.valorGeneralAConsignar)}</p>
-                      </div>
-                      <div>
                         <p className="text-gray-600">Datafono</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.ventaDatafono)}</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.datafono)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Consignado</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.valorConsignado)}</p>
+                        <p className="text-gray-600">Desembolsos</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.desembolsos)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Deducciones</p>
-                        <p className="font-semibold text-gray-900">{formatCOP(row.deducciones)}</p>
+                        <p className="text-gray-600">Efectivo</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.efectivo)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Consignaciones</p>
+                        <p className="font-semibold text-gray-900">{formatCOP(row.consignaciones)}</p>
                       </div>
                     </div>
                   </div>
@@ -873,17 +882,17 @@ export default function SuperadminReportesPage() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Mes</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[200px] whitespace-nowrap">Valor General a Consignar</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Pendiente Fin</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Datafono</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Deducciones</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[150px] whitespace-nowrap">Desembolsos</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Efectivo</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignaciones</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Saldo en Caja</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {consolidadoMensual.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                       No hay datos para el consolidado mensual en este rango.
                     </td>
                   </tr>
@@ -893,11 +902,11 @@ export default function SuperadminReportesPage() {
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium whitespace-nowrap">{row.mes}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm truncate">{row.pdv}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.ventaTotal)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.valorGeneralAConsignar)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.datafono)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(row.desembolsos)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.efectivo)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.consignaciones)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(row.pendienteFinMes)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.ventaDatafono)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.valorConsignado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(row.deducciones)}</td>
                     </tr>
                   ))
                 )}

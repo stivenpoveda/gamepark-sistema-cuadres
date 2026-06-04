@@ -105,6 +105,7 @@ export default function ReportesPage() {
     (acc, c) => {
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
+      const desembolsos = gastos + turneros;
       const metrics = calcCuadreMetrics({
         recaudo: c.recaudo,
         venta_tarjetas: c.venta_tarjetas,
@@ -118,27 +119,29 @@ export default function ReportesPage() {
         context: 'final',
       });
 
-      acc.totalFisico += Number(c.total_fisico) || 0;
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+
       acc.ventaTotal += Number(c.recaudo) || 0;
-      acc.valorGeneralAConsignar += metrics.totalGeneralAConsignar;
-      acc.ventaDatafono += Number(c.venta_tarjetas) || 0;
-      acc.valorConsignado += Number(c.valor_consignado) || 0;
-      acc.deducciones += gastos + turneros;
-      acc.sobrante += metrics.sobrante;
-      acc.faltante += metrics.faltante;
+      acc.datafono += Number(c.venta_tarjetas) || 0;
+      acc.desembolsos += desembolsos;
+      acc.efectivo += metrics.totalEfectivoEsperado;
+      acc.consignaciones += consignaciones;
       return acc;
     },
-    {
-      totalFisico: 0,
-      ventaTotal: 0,
-      valorGeneralAConsignar: 0,
-      ventaDatafono: 0,
-      valorConsignado: 0,
-      deducciones: 0,
-      sobrante: 0,
-      faltante: 0,
-    }
+    { ventaTotal: 0, datafono: 0, desembolsos: 0, efectivo: 0, consignaciones: 0 }
   );
+
+  const saldoEnCaja = cuadresFiltrados.reduce<{ fecha: string; pendiente: number } | null>((acc, c) => {
+    const fecha = c.fecha.split('T')[0];
+    const consignaHoy = (c.consigna_hoy ?? true) === true;
+    const cerrado = !consignaHoy || Boolean(c.url_foto_consignacion) || (Number(c.valor_consignado) || 0) > 0;
+    if (!cerrado) return acc;
+
+    const pendiente = Number(c.consignacion_pendiente) || 0;
+    if (!acc || fecha > acc.fecha) return { fecha, pendiente };
+    return acc;
+  }, null)?.pendiente || 0;
 
   const exportarExcel = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -285,37 +288,45 @@ export default function ReportesPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-md">
             <p className="text-sm text-gray-600">Venta Total</p>
             <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.ventaTotal)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Valor General a Consignar</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.valorGeneralAConsignar)}</p>
+            <p className="text-sm text-gray-600">Datafono</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.datafono)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Deducciones</p>
-            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.deducciones)}</p>
+            <p className="text-sm text-gray-600">Desembolsos</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.desembolsos)}</p>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-md">
-            <p className="text-sm text-gray-600">Total Faltante</p>
-            <p className="text-2xl font-bold text-red-700">{formatCOP(totals.faltante)}</p>
+            <p className="text-sm text-gray-600">Efectivo</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.efectivo)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Consignaciones</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(totals.consignaciones)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-md">
+            <p className="text-sm text-gray-600">Saldo en Caja</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCOP(saldoEnCaja)}</p>
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="overflow-x-auto max-w-full">
-            <table className="w-full min-w-[860px] table-fixed">
+            <table className="w-full min-w-[900px] table-fixed">
               <thead className="bg-light">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Fecha</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[210px] whitespace-nowrap">Valor General a Consignar</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Deducciones</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Pendiente</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Total Físico</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Diferencia</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Desembolsos</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Efectivo</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Consignaciones</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Saldo en Caja</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
                 </tr>
               </thead>
@@ -323,6 +334,7 @@ export default function ReportesPage() {
                 {cuadresFiltrados.map((cuadre) => {
                   const gastos = gastosByCuadreId[cuadre.id] || 0;
                   const turneros = turnerosByCuadreId[cuadre.id] || 0;
+                  const desembolsos = gastos + turneros;
                   const metrics = calcCuadreMetrics({
                     recaudo: cuadre.recaudo,
                     venta_tarjetas: cuadre.venta_tarjetas,
@@ -335,18 +347,17 @@ export default function ReportesPage() {
                     total_fisico: cuadre.total_fisico,
                     context: 'final',
                   });
+                  const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0;
 
                   return (
                     <tr key={cuadre.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(gastos + turneros)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.venta_tarjetas)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(desembolsos)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalEfectivoEsperado)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(consignaciones)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.consignacion_pendiente)}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.total_fisico)}</td>
-                      <td className={`px-6 py-4 text-sm font-medium text-right whitespace-nowrap ${metrics.sobrante > 0 ? 'text-green-600' : metrics.faltante > 0 ? 'text-red-600' : ''}`}>
-                        {metrics.sobrante > 0 ? `+${formatCOP(metrics.sobrante)}` : metrics.faltante > 0 ? `-${formatCOP(metrics.faltante)}` : '$0'}
-                      </td>
                       <td className="px-6 py-4">{getEstadoBadge(cuadre.estado)}</td>
                     </tr>
                   );

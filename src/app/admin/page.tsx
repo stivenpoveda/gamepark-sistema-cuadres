@@ -138,6 +138,11 @@ export default function AdminDashboard() {
       })
     : null;
 
+  const ultimoDesembolsos = ultimoCuadre ? (gastosPorCuadreId[ultimoCuadre.id] || 0) + (turnerosPorCuadreId[ultimoCuadre.id] || 0) : 0;
+  const ultimoEfectivo = ultimoCuadreMetrics?.totalEfectivoEsperado || 0;
+  const ultimoConsignaciones = ultimoCuadre ? (((ultimoCuadre.consigna_hoy ?? true) === false) ? 0 : Number(ultimoCuadre.valor_consignado) || 0) : 0;
+  const ultimoSaldoEnCaja = ultimoCuadreConPendiente?.consignacion_pendiente || 0;
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -405,28 +410,30 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Total Físico</p>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.total_fisico || 0)}</p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Venta Total</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoCuadre?.recaudo || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Venta Total (Sistema)</p>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(cuadres[0]?.recaudo || 0)}</p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Datafono</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoCuadre?.venta_tarjetas || 0)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Valor General a Consignar</p>
-            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoCuadreMetrics?.totalGeneralAConsignar || 0)}</p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Desembolsos</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoDesembolsos)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Diferencia</p>
-            <p className={`text-2xl sm:text-3xl font-bold ${(cuadres[0]?.sobrante || 0) > 0 ? 'text-green-600' : (cuadres[0]?.faltante || 0) > 0 ? 'text-red-600' : ''}`}>
-              {(cuadres[0]?.sobrante || 0) > 0 ? `+${formatCOP(Number(cuadres[0].sobrante))}` : (cuadres[0]?.faltante || 0) > 0 ? `-${formatCOP(Number(cuadres[0].faltante))}` : '$0'}
-            </p>
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Efectivo</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoEfectivo)}</p>
           </div>
           <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-            <p className="text-xs sm:text-sm text-gray-600 mb-2">Estado</p>
-            {cuadres[0] ? getEstadoBadge(cuadres[0].estado) : <span className="text-gray-400 text-sm">Sin cuadre</span>}
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Consignaciones</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoConsignaciones)}</p>
+          </div>
+          <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
+            <p className="text-xs sm:text-sm text-gray-600 mb-2">Saldo en Caja</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900">{formatCOP(ultimoSaldoEnCaja)}</p>
           </div>
         </div>
 
@@ -440,9 +447,12 @@ export default function AdminDashboard() {
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Venta Total</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Valor General a Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Datafono</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Desembolsos</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Efectivo</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Consignaciones</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Estado</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Pendiente Consignar</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Saldo en Caja</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Acciones</th>
                 </tr>
               </thead>
@@ -450,6 +460,7 @@ export default function AdminDashboard() {
                 {cuadres.map((cuadre) => {
                   const totalGastos = gastosPorCuadreId[cuadre.id] || 0;
                   const totalTurneros = turnerosPorCuadreId[cuadre.id] || 0;
+                  const desembolsos = totalGastos + totalTurneros;
                   const metrics = calcCuadreMetrics({
                     recaudo: cuadre.recaudo,
                     venta_tarjetas: cuadre.venta_tarjetas,
@@ -462,24 +473,18 @@ export default function AdminDashboard() {
                     total_fisico: cuadre.total_fisico,
                     context: 'final',
                   });
+                  const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0;
 
                   return (
                     <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">{formatDate(cuadre.fecha)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.recaudo)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(metrics.totalGeneralAConsignar)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.venta_tarjetas)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(desembolsos)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(metrics.totalEfectivoEsperado)}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(consignaciones)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">
-                        {cuadre.consignacion_pendiente &&
-                        cuadre.consignacion_pendiente > 0 &&
-                        ultimoCuadreConPendiente?.id === cuadre.id ? (
-                          <span className="text-orange-700 font-medium text-xs sm:text-sm">
-                            {formatCOP(cuadre.consignacion_pendiente)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-xs sm:text-sm">$0</span>
-                        )}
-                      </td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium">{formatCOP(cuadre.consignacion_pendiente)}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4">
                         <div className="flex items-center gap-2">
                           <button

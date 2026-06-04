@@ -194,33 +194,55 @@ export default function SuperAdminDashboard() {
     );
   };
 
-  const totalVentaHoy = cuadres
-    .filter(c => c.fecha === getTodayString())
-    .reduce((sum, c) => sum + Number(c.total_sistema || 0), 0);
+  const dashboardTotals = filteredCuadres.reduce(
+    (acc, c) => {
+      const gastos = gastosPorCuadreId[c.id] || 0;
+      const turneros = turnerosPorCuadreId[c.id] || 0;
+      const desembolsos = gastos + turneros;
+      const metrics = calcCuadreMetrics({
+        recaudo: c.recaudo,
+        venta_tarjetas: c.venta_tarjetas,
+        consignacion_pendiente: c.consignacion_pendiente,
+        valor_consignado: c.valor_consignado,
+        url_foto_consignacion: c.url_foto_consignacion,
+        consigna_hoy: c.consigna_hoy,
+        gastos: [{ valor: gastos }],
+        turneros: [{ valor: turneros }],
+        total_fisico: c.total_fisico,
+        context: 'final',
+      });
 
-  const localesActivos = puntosDeVenta.filter(p => p.activo).length;
-  const cuadresPendientes = cuadres.filter(
-    (c) => c.estado === 'pendiente' || ((c.consigna_hoy ?? true) === true && !c.url_foto_consignacion)
-  ).length;
-  const ultimoPendientePorPdv = cuadres.reduce<Record<string, { id: string; fecha: string }>>((acc, c) => {
-    if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
-    const consignaHoy = (c.consigna_hoy ?? true) === true;
-    const esCerrado = !consignaHoy || !!c.url_foto_consignacion;
-    if (!esCerrado) return acc;
-    const key = c.punto_de_venta_id || '';
-    if (!key) return acc;
-    const existing = acc[key];
-    if (!existing) {
-      acc[key] = { id: c.id, fecha: c.fecha };
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+
+      acc.ventaTotal += Number(c.recaudo) || 0;
+      acc.datafono += Number(c.venta_tarjetas) || 0;
+      acc.desembolsos += desembolsos;
+      acc.efectivo += metrics.totalEfectivoEsperado;
+      acc.consignaciones += consignaciones;
       return acc;
-    }
-    const existingTime = new Date(existing.fecha).getTime();
-    const cTime = new Date(c.fecha).getTime();
-    if (cTime > existingTime) {
-      acc[key] = { id: c.id, fecha: c.fecha };
-    }
-    return acc;
-  }, {});
+    },
+    { ventaTotal: 0, datafono: 0, desembolsos: 0, efectivo: 0, consignaciones: 0 }
+  );
+
+  const saldoEnCajaTotal = Object.values(
+    filteredCuadres.reduce<Record<string, { fecha: string; pendiente: number }>>((acc, c) => {
+      const pdvId = c.punto_de_venta_id || '';
+      if (!pdvId) return acc;
+
+      const fecha = c.fecha.split('T')[0];
+      const consignaHoy = (c.consigna_hoy ?? true) === true;
+      const cerrado = !consignaHoy || Boolean(c.url_foto_consignacion) || (Number(c.valor_consignado) || 0) > 0;
+      if (!cerrado) return acc;
+
+      const pendiente = Number(c.consignacion_pendiente) || 0;
+      const existing = acc[pdvId];
+      if (!existing || fecha > existing.fecha) {
+        acc[pdvId] = { fecha, pendiente };
+      }
+      return acc;
+    }, {})
+  ).reduce((sum, v) => sum + (Number(v.pendiente) || 0), 0);
 
   if (loading) {
     return (
@@ -320,31 +342,28 @@ export default function SuperAdminDashboard() {
         <div className="p-4 md:p-6 max-w-full">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-primary/10 rounded-lg text-lg sm:text-xl">💰</div>
-                <div>
-                  <p className="text-xs sm:text-sm text-gray-600">Venta Hoy</p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(totalVentaHoy)}</p>
-                </div>
-              </div>
+              <p className="text-xs sm:text-sm text-gray-600">Venta Total</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(dashboardTotals.ventaTotal)}</p>
             </div>
             <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-primary/10 rounded-lg text-lg sm:text-xl">📍</div>
-                <div>
-                  <p className="text-xs sm:text-sm text-gray-600">Locales</p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{localesActivos}</p>
-                </div>
-              </div>
+              <p className="text-xs sm:text-sm text-gray-600">Datafono</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(dashboardTotals.datafono)}</p>
             </div>
             <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="p-2 sm:p-3 bg-warning/10 rounded-lg text-lg sm:text-xl">⏳</div>
-                <div>
-                  <p className="text-xs sm:text-sm text-gray-600">Pendientes</p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{cuadresPendientes}</p>
-                </div>
-              </div>
+              <p className="text-xs sm:text-sm text-gray-600">Desembolsos</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(dashboardTotals.desembolsos)}</p>
+            </div>
+            <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
+              <p className="text-xs sm:text-sm text-gray-600">Efectivo</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(dashboardTotals.efectivo)}</p>
+            </div>
+            <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
+              <p className="text-xs sm:text-sm text-gray-600">Consignaciones</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(dashboardTotals.consignaciones)}</p>
+            </div>
+            <div className="bg-white/95 backdrop-blur-sm p-4 sm:p-6 rounded-xl shadow-2xl border border-white/30">
+              <p className="text-xs sm:text-sm text-gray-600">Saldo en Caja</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{formatCOP(saldoEnCajaTotal)}</p>
             </div>
           </div>
 
@@ -415,19 +434,17 @@ export default function SuperAdminDashboard() {
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Cuadres ({filteredCuadres.length})</h3>
             </div>
             <div className="overflow-x-auto max-w-full">
-              <table className="w-full min-w-[1060px] table-fixed">
+              <table className="w-full min-w-[980px] table-fixed">
                 <thead className="bg-light">
                   <tr>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[220px]">Punto de Venta</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
                     <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[190px] whitespace-nowrap">Valor General a Consignar</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[140px] whitespace-nowrap">Datafono</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[160px] whitespace-nowrap">Consignado</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Pendiente</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[150px] whitespace-nowrap">Deducciones</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[140px] whitespace-nowrap">Total Físico</th>
-                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[120px] whitespace-nowrap">Diferencia</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[150px] whitespace-nowrap">Desembolsos</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[150px] whitespace-nowrap">Efectivo</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignaciones</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Saldo en Caja</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Estado</th>
                     <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Acciones</th>
                   </tr>
@@ -436,7 +453,7 @@ export default function SuperAdminDashboard() {
                   {filteredCuadres.map((cuadre) => {
                     const totalGastos = gastosPorCuadreId[cuadre.id] || 0;
                     const totalTurneros = turnerosPorCuadreId[cuadre.id] || 0;
-                    const totalDeducciones = totalGastos + totalTurneros;
+                    const totalDesembolsos = totalGastos + totalTurneros;
                     const metrics = calcCuadreMetrics({
                       recaudo: cuadre.recaudo,
                       venta_tarjetas: cuadre.venta_tarjetas,
@@ -449,31 +466,18 @@ export default function SuperAdminDashboard() {
                       total_fisico: cuadre.total_fisico,
                       context: 'final',
                     });
+                    const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0;
 
                     return (
                       <tr key={cuadre.id} className="hover:bg-gray-50 transition-colors duration-200">
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium truncate">{cuadre.punto_de_venta?.nombre || 'N/A'}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalGeneralAConsignar)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(cuadre.venta_tarjetas)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(cuadre.valor_consignado)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">
-                          {cuadre.consignacion_pendiente &&
-                          cuadre.consignacion_pendiente > 0 &&
-                          ultimoPendientePorPdv[cuadre.punto_de_venta_id || '']?.id === cuadre.id ? (
-                            <span className="text-orange-700 font-medium text-xs sm:text-sm">
-                              {formatCOP(cuadre.consignacion_pendiente)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs sm:text-sm">$0</span>
-                          )}
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(totalDeducciones)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(cuadre.total_fisico)}</td>
-                        <td className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell ${metrics.sobrante > 0 ? 'text-green-600' : metrics.faltante > 0 ? 'text-red-600' : ''}`}>
-                          {metrics.sobrante > 0 ? `+${formatCOP(metrics.sobrante)}` : metrics.faltante > 0 ? `-${formatCOP(metrics.faltante)}` : '$0'}
-                        </td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.venta_tarjetas)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(totalDesembolsos)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(metrics.totalEfectivoEsperado)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(consignaciones)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">{getEstadoBadge(cuadre.estado)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <div className="flex gap-2 items-center">
