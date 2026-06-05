@@ -261,7 +261,7 @@ export default function CuadreDetalle() {
 
     const operacionales = [
       { label: 'Ventas Caja', value: Number(cuadre.recaudo || 0) },
-      { label: 'Venta Confiteria', value: Number(cuadre.venta_confiteria || 0) },
+      { label: 'Venta Areas Comunes', value: Number(cuadre.venta_confiteria || 0) },
       { label: 'Ventas no registrada', value: 0 },
       { label: 'Fiesta Infantil', value: Number(cuadre.venta_fiesta || 0) },
     ];
@@ -641,7 +641,7 @@ export default function CuadreDetalle() {
     worksheet.getCell('C9').alignment = { horizontal: 'right' };
     applyBorders('B9', 'D9');
     
-    worksheet.getCell('B10').value = 'Venta Confiteria';
+    worksheet.getCell('B10').value = 'Venta Areas Comunes';
     worksheet.getCell('C10').value = cuadre.venta_confiteria || 0;
     worksheet.getCell('C10').numFmt = '#,##0';
     worksheet.getCell('C10').alignment = { horizontal: 'right' };
@@ -787,10 +787,12 @@ export default function CuadreDetalle() {
       'Turnos',
       GASTO_CATEGORIA_TRANSPORTE_LABEL,
       'Fiestas',
+      'Abonos fiestas consignadas',
       'Compra redencion',
       'Peluches',
       'Utiles-Papeleria y Fotocopias',
       'Base Refrigierios y H20',
+      'Bioseguridad',
       'Bioseguridad',
       'Publicidad y avisos varios',
       'Compra de aseo',
@@ -1068,6 +1070,10 @@ export default function CuadreDetalle() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Venta Fiesta</span>
                     <span className="font-medium">{formatCOP(cuadre.venta_fiesta)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Venta Areas Comunes</span>
+                    <span className="font-medium">{formatCOP(cuadre.venta_confiteria)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Cajero Automático</span>

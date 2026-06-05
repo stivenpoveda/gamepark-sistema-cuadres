@@ -16,6 +16,7 @@ const categoriasGastos = [
   { value: 'Turnos', label: 'Turnos' },
   { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos Maquinaria y Repuestos' },
   { value: 'Fiestas', label: 'Fiestas' },
+  { value: 'Abonos fiestas consignadas', label: 'Abonos fiestas consignadas' },
   { value: 'Compra redencion', label: 'Compra redencion' },
   { value: 'Peluches', label: 'Peluches' },
   { value: 'Utiles-Papeleria y Fotocopias', label: 'Utiles-Papeleria y Fotocopias' },

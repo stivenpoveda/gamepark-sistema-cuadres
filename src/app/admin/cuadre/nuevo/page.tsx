@@ -24,6 +24,7 @@ const categoriasGastos = [
   { value: 'Turnos', label: 'Turnos' },
   { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos Maquinaria y Repuestos' },
   { value: 'Fiestas', label: 'Fiestas' },
+  { value: 'Abonos fiestas consignadas', label: 'Abonos fiestas consignadas' },
   { value: 'Compra redencion', label: 'Compra redencion' },
   { value: 'Peluches', label: 'Peluches' },
   { value: 'Utiles-Papeleria y Fotocopias', label: 'Utiles-Papeleria y Fotocopias' },
@@ -627,7 +628,7 @@ export default function CuadreWizard() {
               {[
                 { label: 'Venta Datafono', key: 'venta_tarjetas' },
                 { label: 'Venta Fiesta', key: 'venta_fiesta' },
-                { label: 'Venta Confitería', key: 'venta_confiteria' },
+                { label: 'Venta Areas Comunes', key: 'venta_confiteria' },
                 { label: 'Venta Cajero Automático', key: 'venta_cajero_auto' },
               ].map((field) => (
                 <div key={field.key}>
