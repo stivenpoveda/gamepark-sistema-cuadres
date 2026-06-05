@@ -246,11 +246,14 @@ export default function CuadreWizard() {
       if (normalizedUpdates.venta_confiteria !== undefined && normalizedUpdates.recibos === undefined) {
         normalizedUpdates.recibos = normalizedUpdates.venta_confiteria;
       }
+      if (normalizedUpdates.recibos !== undefined && normalizedUpdates.venta_confiteria === undefined) {
+        normalizedUpdates.venta_confiteria = normalizedUpdates.recibos;
+      }
 
       // Lista de campos que realmente existen en la tabla cuadres_diarios (conocidos)
       const allowedFields = [
         'punto_de_venta_id', 'usuario_id', 'fecha', 'estado',
-        'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'venta_confiteria',
+        'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'venta_confiteria', 'recibos',
         'tar_inicial', 'tar_consumo', 'tar_fiestas', 'tar_malas', 'tar_final',
         'total_fisico', 'total_sistema', 'sobrante', 'faltante',
         'url_foto_consignacion', 'firma_cajero_url', 'nombre_administradora', 'cedula_administradora', 'observaciones',
