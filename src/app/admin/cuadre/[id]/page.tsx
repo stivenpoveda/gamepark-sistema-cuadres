@@ -203,7 +203,6 @@ export default function CuadreDetalle() {
 
   const totalGastos = cuadreMetrics.totalGastos;
   const totalTurneros = cuadreMetrics.totalTurneros;
-  const totalEfectivoEsperado = cuadreMetrics.totalEfectivoEsperado;
   const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
   const pendienteInicial = cuadreMetrics.pendienteInicial;
 
@@ -1095,12 +1094,6 @@ export default function CuadreDetalle() {
                   <div className="flex justify-between font-bold text-xl">
                     <span className="text-orange-800">Total General a Consignar</span>
                     <span className="text-orange-800">{formatCOP(totalGeneralAConsignar)}</span>
-                  </div>
-                </div>
-                <div className="pt-2 border-t">
-                  <div className="flex justify-between font-semibold text-lg">
-                    <span className="text-green-600">Valor a Consignar Hoy</span>
-                    <span className="text-green-600">{formatCOP(totalEfectivoEsperado)}</span>
                   </div>
                 </div>
                 {pendienteInicial > 0 && (
