@@ -205,6 +205,7 @@ export default function CuadreDetalle() {
   const totalTurneros = cuadreMetrics.totalTurneros;
   const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
   const pendienteInicial = cuadreMetrics.pendienteInicial;
+  const ventaAreasComunes = Number(cuadre.venta_confiteria || 0) || Number(cuadre.recibos || 0);
 
   const exportarCuadroDiarioPDF = () => {
     const escapeHtml = (value: unknown) =>
@@ -222,6 +223,7 @@ export default function CuadreDetalle() {
       'Turnos',
       GASTO_CATEGORIA_TRANSPORTE_LABEL,
       'Fiestas',
+      'Abonos fiestas consignadas',
       'Compra redencion',
       'Peluches',
       'Utiles-Papeleria y Fotocopias',
@@ -261,7 +263,7 @@ export default function CuadreDetalle() {
 
     const operacionales = [
       { label: 'Ventas Caja', value: Number(cuadre.recaudo || 0) },
-      { label: 'Venta Areas Comunes', value: Number(cuadre.venta_confiteria || 0) },
+      { label: 'Venta Areas Comunes', value: ventaAreasComunes },
       { label: 'Ventas no registrada', value: 0 },
       { label: 'Fiesta Infantil', value: Number(cuadre.venta_fiesta || 0) },
     ];
@@ -642,7 +644,7 @@ export default function CuadreDetalle() {
     applyBorders('B9', 'D9');
     
     worksheet.getCell('B10').value = 'Venta Areas Comunes';
-    worksheet.getCell('C10').value = cuadre.venta_confiteria || 0;
+    worksheet.getCell('C10').value = ventaAreasComunes;
     worksheet.getCell('C10').numFmt = '#,##0';
     worksheet.getCell('C10').alignment = { horizontal: 'right' };
     applyBorders('B10', 'D10');
@@ -1073,7 +1075,7 @@ export default function CuadreDetalle() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Venta Areas Comunes</span>
-                    <span className="font-medium">{formatCOP(cuadre.venta_confiteria)}</span>
+                    <span className="font-medium">{formatCOP(ventaAreasComunes)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Cajero Automático</span>

@@ -66,6 +66,16 @@ export default function CuadreWizard() {
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
   const fechaSeleccionada = searchParams.get('date') || getTodayString();
 
+  const normalizeCuadreVentas = (c: any) => {
+    const ventaAreasComunes = Number(c?.venta_confiteria ?? c?.recibos ?? 0) || 0;
+    const recibos = Number(c?.recibos ?? c?.venta_confiteria ?? 0) || 0;
+    return {
+      ...c,
+      venta_confiteria: ventaAreasComunes,
+      recibos,
+    };
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -213,8 +223,9 @@ export default function CuadreWizard() {
             }
           }
 
-          setCuadre(newCuadre);
-          setLocalCuadre(newCuadre);
+          const normalized = normalizeCuadreVentas(newCuadre);
+          setCuadre(normalized);
+          setLocalCuadre(normalized);
         }
       } catch (error) {
         console.error('Error en la inicialización:', error);
@@ -231,6 +242,11 @@ export default function CuadreWizard() {
     if (!cuadre?.id) return;
     setSaving(true);
     try {
+      const normalizedUpdates: any = { ...(updates as any) };
+      if (normalizedUpdates.venta_confiteria !== undefined && normalizedUpdates.recibos === undefined) {
+        normalizedUpdates.recibos = normalizedUpdates.venta_confiteria;
+      }
+
       // Lista de campos que realmente existen en la tabla cuadres_diarios (conocidos)
       const allowedFields = [
         'punto_de_venta_id', 'usuario_id', 'fecha', 'estado',
@@ -245,8 +261,8 @@ export default function CuadreWizard() {
       // Filtrar solo los campos permitidos
       const cleanUpdates: Record<string, any> = {};
       for (const key of allowedFields) {
-        if ((updates as any)[key] !== undefined) {
-          cleanUpdates[key] = (updates as any)[key];
+        if (normalizedUpdates[key] !== undefined) {
+          cleanUpdates[key] = normalizedUpdates[key];
         }
       }
 
@@ -286,8 +302,9 @@ export default function CuadreWizard() {
         usuario: cuadre.usuario,
       };
       
-      setCuadre(updatedCuadre);
-      setLocalCuadre(updatedCuadre);
+      const normalized = normalizeCuadreVentas(updatedCuadre);
+      setCuadre(normalized);
+      setLocalCuadre(normalized);
     } catch (error) {
       console.error('Error en saveCuadre:', error);
       toast.error('Error al guardar');
@@ -636,7 +653,14 @@ export default function CuadreWizard() {
                   <input
                     type="number"
                     value={(localCuadre?.[field.key as keyof CuadreDiario] as number) === 0 ? '' : (localCuadre?.[field.key as keyof CuadreDiario] as number)}
-                    onChange={(e) => setLocalCuadre({ ...localCuadre, [field.key]: Number(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const value = Number(e.target.value) || 0;
+                      if (field.key === 'venta_confiteria') {
+                        setLocalCuadre({ ...localCuadre, venta_confiteria: value, recibos: value });
+                        return;
+                      }
+                      setLocalCuadre({ ...localCuadre, [field.key]: value });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -918,10 +942,6 @@ export default function CuadreWizard() {
                 <div>
                   <p className="text-sm text-gray-600">Total General a Consignar</p>
                   <p className="text-xl font-bold">{formatCOP(totalEfectivoConPendiente)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Valor a Consignar Hoy</p>
-                  <p className="text-xl font-bold">{formatCOP(totalEfectivoEsperado)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Pendiente al Iniciar</p>
