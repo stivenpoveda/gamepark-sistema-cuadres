@@ -77,6 +77,7 @@ export default function SuperadminReportesPage() {
   }, []);
 
   const cuadresFiltrados = cuadres.filter((c) => {
+    if (c.estado === 'borrador') return false;
     let matchFecha = true;
     if (fechaInicio && fechaFin) {
       // Aseguramos que la fecha del cuadre esté en formato YYYY-MM-DD
@@ -160,8 +161,6 @@ export default function SuperadminReportesPage() {
       { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 22 },
       { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
-      { header: 'Sobrante', key: 'sobrante', width: 15 },
-      { header: 'Faltante', key: 'faltante', width: 15 },
       { header: 'Estado', key: 'estado', width: 15 },
     ];
 
@@ -191,8 +190,6 @@ export default function SuperadminReportesPage() {
         deducciones: formatCOP(gastos + turneros),
         pendiente: formatCOP(c.consignacion_pendiente),
         totalFisico: formatCOP(c.total_fisico),
-        sobrante: formatCOP(c.sobrante),
-        faltante: formatCOP(c.faltante),
         estado: c.estado,
       });
     });

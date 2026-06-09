@@ -156,8 +156,6 @@ export default function ReportesPage() {
       { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 22 },
       { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
-      { header: 'Sobrante', key: 'sobrante', width: 15 },
-      { header: 'Faltante', key: 'faltante', width: 15 },
       { header: 'Estado', key: 'estado', width: 15 },
     ];
 
@@ -186,8 +184,6 @@ export default function ReportesPage() {
         deducciones: formatCOP(gastos + turneros),
         pendiente: formatCOP(c.consignacion_pendiente),
         totalFisico: formatCOP(c.total_fisico),
-        sobrante: formatCOP(metrics.sobrante),
-        faltante: formatCOP(metrics.faltante),
         estado: c.estado,
       });
     });
