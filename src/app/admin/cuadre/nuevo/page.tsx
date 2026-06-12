@@ -74,6 +74,9 @@ export default function CuadreWizard() {
   // Local state for form fields to prevent lag
   const [localCuadre, setLocalCuadre] = useState<Partial<CuadreDiario>>({});
   const [cuentaConsignacionId, setCuentaConsignacionId] = useState('');
+  const [bancoConsignacion, setBancoConsignacion] = useState('');
+  const [tipoCuentaConsignacion, setTipoCuentaConsignacion] = useState('');
+  const [numeroCuentaConsignacion, setNumeroCuentaConsignacion] = useState('');
   const [otraCuentaConsignacion, setOtraCuentaConsignacion] = useState<OtraCuentaConsignacion>(emptyOtraCuenta);
   const [fotosConsignacion, setFotosConsignacion] = useState<string[]>([]);
 
@@ -93,7 +96,11 @@ export default function CuadreWizard() {
 
   const hydrateConsignacionState = (record: any) => {
     const metadata = parseConsignacionMetadata(record?.firma_cajero_url);
+    const cuentaPredefinida = getCuentaConsignacionById(metadata?.cuentaId);
     setCuentaConsignacionId(metadata?.cuentaId || '');
+    setBancoConsignacion(cuentaPredefinida?.banco || '');
+    setTipoCuentaConsignacion(cuentaPredefinida?.tipoCuenta || '');
+    setNumeroCuentaConsignacion(cuentaPredefinida?.numeroCuenta || '');
     setOtraCuentaConsignacion(
       metadata?.otraCuenta
         ? {
@@ -402,13 +409,28 @@ export default function CuadreWizard() {
   const hayFotoConsignacion = Boolean(fotoConsignacionPrincipal);
   const cuentaConsignacionSeleccionada = getCuentaConsignacionById(cuentaConsignacionId);
   const usaOtraCuentaConsignacion = cuentaConsignacionId === 'otra';
+  const usaCuentaPredefinida = !usaOtraCuentaConsignacion;
+  const bancosConsignacionDisponibles = Array.from(new Set(CUENTAS_CONSIGNACION.map((cuenta) => cuenta.banco)));
+  const tiposCuentaDisponibles = Array.from(
+    new Set(
+      CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === bancoConsignacion).map((cuenta) => cuenta.tipoCuenta)
+    )
+  );
+  const cuentasDisponibles = CUENTAS_CONSIGNACION.filter(
+    (cuenta) =>
+      cuenta.banco === bancoConsignacion &&
+      cuenta.tipoCuenta === tipoCuentaConsignacion
+  );
+  const cuentaPredefinidaSeleccionada = cuentasDisponibles.find(
+    (cuenta) => cuenta.numeroCuenta === numeroCuentaConsignacion
+  ) || cuentaConsignacionSeleccionada;
   const otraCuentaCompleta = [
     otraCuentaConsignacion.banco,
     otraCuentaConsignacion.numeroCuenta,
     otraCuentaConsignacion.tipoCuenta,
     otraCuentaConsignacion.titular,
   ].every((value) => value.trim());
-  const cuentaConsignacionValida = !consignaHoy || (Boolean(cuentaConsignacionId) && (!usaOtraCuentaConsignacion || otraCuentaCompleta));
+  const cuentaConsignacionValida = !consignaHoy || (usaOtraCuentaConsignacion ? otraCuentaCompleta : Boolean(cuentaConsignacionId));
 
   const persistConsignacionMetadata = async (overrides?: {
     cuentaId?: string;
@@ -452,6 +474,49 @@ export default function CuadreWizard() {
       return;
     }
     await persistConsignacionMetadata({ cuentaId: nextCuentaId, otraCuenta: otraCuentaConsignacion });
+  };
+
+  const handleCuentaRegistradaMode = async () => {
+    setCuentaConsignacionId('');
+    setBancoConsignacion('');
+    setTipoCuentaConsignacion('');
+    setNumeroCuentaConsignacion('');
+    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
+  };
+
+  const handleOtraCuentaMode = async () => {
+    setCuentaConsignacionId('otra');
+    setBancoConsignacion('');
+    setTipoCuentaConsignacion('');
+    setNumeroCuentaConsignacion('');
+    await persistConsignacionMetadata({ cuentaId: 'otra', otraCuenta: otraCuentaConsignacion });
+  };
+
+  const handleBancoConsignacionChange = async (nextBanco: string) => {
+    setBancoConsignacion(nextBanco);
+    setTipoCuentaConsignacion('');
+    setNumeroCuentaConsignacion('');
+    setCuentaConsignacionId('');
+    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
+  };
+
+  const handleTipoCuentaConsignacionChange = async (nextTipoCuenta: string) => {
+    setTipoCuentaConsignacion(nextTipoCuenta);
+    setNumeroCuentaConsignacion('');
+    setCuentaConsignacionId('');
+    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
+  };
+
+  const handleNumeroCuentaConsignacionChange = async (nextNumeroCuenta: string) => {
+    setNumeroCuentaConsignacion(nextNumeroCuenta);
+    const cuentaSeleccionada = CUENTAS_CONSIGNACION.find(
+      (cuenta) =>
+        cuenta.banco === bancoConsignacion &&
+        cuenta.tipoCuenta === tipoCuentaConsignacion &&
+        cuenta.numeroCuenta === nextNumeroCuenta
+    );
+    setCuentaConsignacionId(cuentaSeleccionada?.id || '');
+    await persistConsignacionMetadata({ cuentaId: cuentaSeleccionada?.id || '', otraCuenta: null });
   };
 
   const handleOtraCuentaFieldChange = (field: keyof OtraCuentaConsignacion, value: string) => {
@@ -1028,52 +1093,91 @@ export default function CuadreWizard() {
                 <div className="space-y-6">
                   <div>
                     <h3 className="text-lg font-medium mb-3">Cuenta de Consignación</h3>
-                    <div className="space-y-3">
-                      {CUENTAS_CONSIGNACION.map((cuenta) => (
-                        <label
-                          key={cuenta.id}
-                          className={`block rounded-lg border p-4 cursor-pointer transition-colors ${
-                            cuentaConsignacionId === cuenta.id ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <input
-                              type="radio"
-                              name="cuentaConsignacion"
-                              checked={cuentaConsignacionId === cuenta.id}
-                              onChange={() => handleCuentaConsignacionChange(cuenta.id)}
-                              className="mt-1 w-4 h-4"
-                            />
-                            <div className="text-sm text-gray-700">
-                              <p className="font-semibold text-gray-900">{cuenta.banco}</p>
-                              <p>Cuenta: {cuenta.numeroCuenta}</p>
-                              <p>Tipo: {cuenta.tipoCuenta}</p>
-                              <p>Titular: {cuenta.titular}</p>
-                            </div>
-                          </div>
-                        </label>
-                      ))}
-                      <label
-                        className={`block rounded-lg border p-4 cursor-pointer transition-colors ${
-                          usaOtraCuentaConsignacion ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={handleCuentaRegistradaMode}
+                        className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                          usaCuentaPredefinida ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="radio"
-                            name="cuentaConsignacion"
-                            checked={usaOtraCuentaConsignacion}
-                            onChange={() => handleCuentaConsignacionChange('otra')}
-                            className="w-4 h-4"
-                          />
-                          <div>
-                            <p className="font-semibold text-gray-900">Otra</p>
-                            <p className="text-sm text-gray-600">Escribe banco, número de cuenta, tipo y titular.</p>
-                          </div>
-                        </div>
-                      </label>
+                        <p className="font-semibold">Cuenta registrada</p>
+                        <p className="text-sm text-gray-600">Selecciona banco, tipo y número disponible.</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOtraCuentaMode}
+                        className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                          usaOtraCuentaConsignacion ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
+                        }`}
+                      >
+                        <p className="font-semibold">Otra cuenta</p>
+                        <p className="text-sm text-gray-600">Escribe banco, número de cuenta, tipo y titular.</p>
+                      </button>
                     </div>
                   </div>
+
+                  {usaCuentaPredefinida && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                        <select
+                          value={bancoConsignacion}
+                          onChange={(e) => handleBancoConsignacionChange(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                        >
+                          <option value="">Selecciona un banco</option>
+                          {bancosConsignacionDisponibles.map((banco) => (
+                            <option key={banco} value={banco}>
+                              {banco}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
+                        <select
+                          value={tipoCuentaConsignacion}
+                          onChange={(e) => handleTipoCuentaConsignacionChange(e.target.value)}
+                          disabled={!bancoConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
+                        >
+                          <option value="">Selecciona tipo de cuenta</option>
+                          {tiposCuentaDisponibles.map((tipoCuenta) => (
+                            <option key={tipoCuenta} value={tipoCuenta}>
+                              {tipoCuenta}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
+                        <select
+                          value={numeroCuentaConsignacion}
+                          onChange={(e) => handleNumeroCuentaConsignacionChange(e.target.value)}
+                          disabled={!tipoCuentaConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
+                        >
+                          <option value="">Selecciona el número de cuenta</option>
+                          {cuentasDisponibles.map((cuenta) => (
+                            <option key={cuenta.id} value={cuenta.numeroCuenta}>
+                              {cuenta.numeroCuenta}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
+                        <input
+                          type="text"
+                          value={cuentaPredefinidaSeleccionada?.titular || ''}
+                          readOnly
+                          placeholder="Se completa automáticamente"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {usaOtraCuentaConsignacion && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -1122,18 +1226,18 @@ export default function CuadreWizard() {
 
                   {!cuentaConsignacionValida && (
                     <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                      Debes seleccionar la cuenta de consignación. Si eliges <strong>Otra</strong>, completa todos los datos.
+                      Debes completar la cuenta de consignación. Si eliges <strong>Cuenta registrada</strong>, selecciona banco, tipo y número. Si eliges <strong>Otra</strong>, completa todos los datos.
                     </div>
                   )}
 
-                  {cuentaConsignacionSeleccionada && (
+                  {cuentaPredefinidaSeleccionada && usaCuentaPredefinida && (
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <p className="text-sm text-gray-600">Cuenta seleccionada</p>
                       <p className="font-semibold text-gray-900">
-                        {cuentaConsignacionSeleccionada.banco} - {cuentaConsignacionSeleccionada.numeroCuenta}
+                        {cuentaPredefinidaSeleccionada.banco} - {cuentaPredefinidaSeleccionada.numeroCuenta}
                       </p>
                       <p className="text-sm text-gray-700">
-                        {cuentaConsignacionSeleccionada.tipoCuenta} - {cuentaConsignacionSeleccionada.titular}
+                        {cuentaPredefinidaSeleccionada.tipoCuenta} - {cuentaPredefinidaSeleccionada.titular}
                       </p>
                     </div>
                   )}
