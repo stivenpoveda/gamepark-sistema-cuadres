@@ -7,7 +7,10 @@ import {
   formatCOP,
   formatDate,
   GASTO_CATEGORIA_TRANSPORTE_LABEL,
+  getConsignacionFotos,
+  getCuentaConsignacionById,
   getGastoCategoriaLabel,
+  parseConsignacionMetadata,
 } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
@@ -116,7 +119,7 @@ export default function CuadreDetalle() {
         .select()
         .single();
       
-      setCuadre(data);
+      setCuadre((prev) => (prev ? { ...prev, ...data } : data));
       toast.success('Cuadre aprobado exitosamente');
     } catch (error) {
       toast.error('Error al aprobar el cuadre');
@@ -142,7 +145,7 @@ export default function CuadreDetalle() {
         .select()
         .single();
       
-      setCuadre(data);
+      setCuadre((prev) => (prev ? { ...prev, ...data } : data));
       setShowObservacionModal(false);
       setObservacionSuperadmin('');
       toast.success('Cuadre devuelto exitosamente');
@@ -206,6 +209,15 @@ export default function CuadreDetalle() {
   const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
   const pendienteInicial = cuadreMetrics.pendienteInicial;
   const ventaAreasComunes = Number(cuadre.venta_confiteria || 0) || Number(cuadre.recibos || 0);
+  const consignacionMetadata = parseConsignacionMetadata(cuadre.firma_cajero_url);
+  const cuentaConsignacion =
+    consignacionMetadata?.cuentaId === 'otra'
+      ? consignacionMetadata.otraCuenta
+      : getCuentaConsignacionById(consignacionMetadata?.cuentaId);
+  const fotosConsignacion = getConsignacionFotos({
+    url_foto_consignacion: cuadre.url_foto_consignacion,
+    firma_cajero_url: cuadre.firma_cajero_url,
+  });
 
   const exportarCuadroDiarioPDF = () => {
     const escapeHtml = (value: unknown) =>
@@ -1199,18 +1211,51 @@ export default function CuadreDetalle() {
             </div>
           ) : null}
 
-          {cuadre.url_foto_consignacion || cuadre.nombre_administradora || cuadre.cedula_administradora ? (
+          {fotosConsignacion.length > 0 || cuentaConsignacion || cuadre.nombre_administradora || cuadre.cedula_administradora ? (
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4 text-gray-800">Consignación y Administradora</h2>
               
-              {cuadre.url_foto_consignacion && (
+              {cuentaConsignacion && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-lg font-medium mb-3 text-gray-800">Cuenta de Consignación</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Banco</p>
+                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.banco || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Número de Cuenta</p>
+                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.numeroCuenta || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Tipo de Cuenta</p>
+                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.tipoCuenta || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Titular</p>
+                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.titular || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {fotosConsignacion.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-medium mb-3 text-gray-800">Foto Consignación</h3>
-                  <img
-                    src={cuadre.url_foto_consignacion}
-                    alt="Consignación"
-                    className="w-full max-w-lg rounded border border-gray-200 shadow-sm"
-                  />
+                  <h3 className="text-lg font-medium mb-3 text-gray-800">Fotos de Consignación</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {fotosConsignacion.map((fotoUrl, index) => (
+                      <div key={fotoUrl} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                        <p className="text-xs font-medium text-gray-500 mb-2">
+                          {index === 0 ? 'Foto principal' : `Foto ${index + 1}`}
+                        </p>
+                        <img
+                          src={fotoUrl}
+                          alt={`Consignación ${index + 1}`}
+                          className="w-full rounded border border-gray-200 shadow-sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1230,7 +1275,7 @@ export default function CuadreDetalle() {
                 </div>
               )}
 
-              {cuadre.url_foto_consignacion && (
+              {(cuadre.consigna_hoy ?? true) === true && (
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <div className="flex justify-between font-semibold text-lg">
                     <span className="text-gray-700">Valor Consignado</span>

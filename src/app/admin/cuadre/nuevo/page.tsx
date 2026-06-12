@@ -3,13 +3,19 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
+  CUENTAS_CONSIGNACION,
   calcCuadreMetrics,
   formatCOP,
   formatDate,
+  getConsignacionFotos,
   getGastoCategoriaLabel,
+  getCuentaConsignacionById,
   getTodayString,
   GASTO_CATEGORIA_TRANSPORTE_CODE,
   normalizeGastoCategoria,
+  parseConsignacionMetadata,
+  serializeConsignacionMetadata,
+  type OtraCuentaConsignacion,
 } from '@/lib/utils';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -41,6 +47,12 @@ const categoriasGastos = [
 
 export default function CuadreWizard() {
   const router = useRouter();
+  const emptyOtraCuenta: OtraCuentaConsignacion = {
+    banco: '',
+    numeroCuenta: '',
+    tipoCuenta: '',
+    titular: '',
+  };
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1);
@@ -61,6 +73,9 @@ export default function CuadreWizard() {
 
   // Local state for form fields to prevent lag
   const [localCuadre, setLocalCuadre] = useState<Partial<CuadreDiario>>({});
+  const [cuentaConsignacionId, setCuentaConsignacionId] = useState('');
+  const [otraCuentaConsignacion, setOtraCuentaConsignacion] = useState<OtraCuentaConsignacion>(emptyOtraCuenta);
+  const [fotosConsignacion, setFotosConsignacion] = useState<string[]>([]);
 
   // Obtener la fecha de los query params
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -75,6 +90,35 @@ export default function CuadreWizard() {
       recibos,
     };
   };
+
+  const hydrateConsignacionState = (record: any) => {
+    const metadata = parseConsignacionMetadata(record?.firma_cajero_url);
+    setCuentaConsignacionId(metadata?.cuentaId || '');
+    setOtraCuentaConsignacion(
+      metadata?.otraCuenta
+        ? {
+            banco: metadata.otraCuenta.banco || '',
+            numeroCuenta: metadata.otraCuenta.numeroCuenta || '',
+            tipoCuenta: metadata.otraCuenta.tipoCuenta || '',
+            titular: metadata.otraCuenta.titular || '',
+          }
+        : emptyOtraCuenta
+    );
+    setFotosConsignacion(getConsignacionFotos(record));
+  };
+
+  const getConsignacionMetadataPayload = (overrides?: {
+    cuentaId?: string;
+    otraCuenta?: OtraCuentaConsignacion;
+    fotos?: string[];
+  }) =>
+    serializeConsignacionMetadata({
+      cuentaId: overrides?.cuentaId ?? cuentaConsignacionId,
+      otraCuenta: (overrides?.cuentaId ?? cuentaConsignacionId) === 'otra'
+        ? (overrides?.otraCuenta ?? otraCuentaConsignacion)
+        : null,
+      fotos: (overrides?.fotos ?? fotosConsignacion).slice(1),
+    });
 
   useEffect(() => {
     const init = async () => {
@@ -160,8 +204,10 @@ export default function CuadreWizard() {
             pagos_turneros: turnerosRes.data,
           };
 
-          setCuadre(cuadreCompleto);
-          setLocalCuadre(cuadreCompleto);
+          const normalized = normalizeCuadreVentas(cuadreCompleto);
+          setCuadre(normalized);
+          setLocalCuadre(normalized);
+          hydrateConsignacionState(normalized);
           if (shouldApplyPendienteArrastre) {
             await supabase
               .from('cuadres_diarios')
@@ -226,6 +272,7 @@ export default function CuadreWizard() {
           const normalized = normalizeCuadreVentas(newCuadre);
           setCuadre(normalized);
           setLocalCuadre(normalized);
+          hydrateConsignacionState(normalized);
         }
       } catch (error) {
         console.error('Error en la inicialización:', error);
@@ -347,6 +394,77 @@ export default function CuadreWizard() {
     (localCuadre?.tar_malas || 0);
 
   const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
+  const fotoConsignacionPrincipal =
+    fotosConsignacion[0] ||
+    (typeof localCuadre?.url_foto_consignacion === 'string' ? localCuadre.url_foto_consignacion : null) ||
+    cuadre?.url_foto_consignacion ||
+    null;
+  const hayFotoConsignacion = Boolean(fotoConsignacionPrincipal);
+  const cuentaConsignacionSeleccionada = getCuentaConsignacionById(cuentaConsignacionId);
+  const usaOtraCuentaConsignacion = cuentaConsignacionId === 'otra';
+  const otraCuentaCompleta = [
+    otraCuentaConsignacion.banco,
+    otraCuentaConsignacion.numeroCuenta,
+    otraCuentaConsignacion.tipoCuenta,
+    otraCuentaConsignacion.titular,
+  ].every((value) => value.trim());
+  const cuentaConsignacionValida = !consignaHoy || (Boolean(cuentaConsignacionId) && (!usaOtraCuentaConsignacion || otraCuentaCompleta));
+
+  const persistConsignacionMetadata = async (overrides?: {
+    cuentaId?: string;
+    otraCuenta?: OtraCuentaConsignacion | null;
+    fotos?: string[];
+    principal?: string | null;
+    consignaHoy?: boolean;
+    valorConsignado?: number;
+  }) => {
+    const nextFotos = overrides?.fotos ?? fotosConsignacion;
+    const principal = overrides?.principal ?? nextFotos[0] ?? null;
+    const nextCuentaId = overrides?.cuentaId ?? cuentaConsignacionId;
+    const nextOtraCuenta =
+      overrides?.otraCuenta === null
+        ? null
+        : overrides?.otraCuenta ?? otraCuentaConsignacion;
+
+    setFotosConsignacion(nextFotos);
+    setLocalCuadre((prev) => ({
+      ...prev,
+      url_foto_consignacion: principal,
+      consigna_hoy: overrides?.consignaHoy ?? prev?.consigna_hoy,
+    }));
+
+    await saveCuadre({
+      url_foto_consignacion: principal,
+      firma_cajero_url: serializeConsignacionMetadata({
+        cuentaId: nextCuentaId,
+        otraCuenta: nextCuentaId === 'otra' ? nextOtraCuenta : null,
+        fotos: nextFotos.slice(1),
+      }),
+      ...(overrides?.consignaHoy !== undefined ? { consigna_hoy: overrides.consignaHoy } : {}),
+      ...(overrides?.valorConsignado !== undefined ? { valor_consignado: overrides.valorConsignado } : {}),
+    });
+  };
+
+  const handleCuentaConsignacionChange = async (nextCuentaId: string) => {
+    setCuentaConsignacionId(nextCuentaId);
+    if (nextCuentaId !== 'otra') {
+      await persistConsignacionMetadata({ cuentaId: nextCuentaId, otraCuenta: null });
+      return;
+    }
+    await persistConsignacionMetadata({ cuentaId: nextCuentaId, otraCuenta: otraCuentaConsignacion });
+  };
+
+  const handleOtraCuentaFieldChange = (field: keyof OtraCuentaConsignacion, value: string) => {
+    setOtraCuentaConsignacion((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const saveOtraCuentaConsignacion = async () => {
+    if (!usaOtraCuentaConsignacion) return;
+    await persistConsignacionMetadata({
+      cuentaId: 'otra',
+      otraCuenta: otraCuentaConsignacion,
+    });
+  };
 
   const nextStep = async () => {
     // Save local state to database before moving to next step
@@ -360,10 +478,14 @@ export default function CuadreWizard() {
 
   const enviarCuadre = async () => {
     if (!cuadre?.id) return;
+    if (!cuentaConsignacionValida) {
+      toast.error('Selecciona la cuenta de consignación y completa los datos si eliges Otra');
+      return;
+    }
     setSaving(true);
     try {
       const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
-      const nuevoEstado = consignaHoy ? (cuadre.url_foto_consignacion ? 'enviado' : 'pendiente') : 'enviado';
+      const nuevoEstado = consignaHoy ? (hayFotoConsignacion ? 'enviado' : 'pendiente') : 'enviado';
       
       const updates = {
         ...localCuadre,
@@ -374,9 +496,14 @@ export default function CuadreWizard() {
         tar_final: tarFinal,
         estado: nuevoEstado as 'enviado' | 'pendiente',
         fecha_envio: new Date().toISOString(),
+        observacion_superadmin: '',
+        firma_cajero_url: consignaHoy
+          ? getConsignacionMetadataPayload()
+          : serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [] }),
         ...(nuevoEstado === 'enviado'
           ? consignaHoy
             ? {
+                url_foto_consignacion: fotoConsignacionPrincipal,
                 valor_consignado: Number(valorConsignadoInput) || 0,
                 consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
               }
@@ -406,15 +533,33 @@ export default function CuadreWizard() {
   };
 
   const handleFotoConsignacionUpload = async (url: string) => {
-    // First, save the URL
-    setLocalCuadre((prev) => ({ ...prev, consigna_hoy: true }));
-    await saveCuadre({ url_foto_consignacion: url, consigna_hoy: true });
-    // Then show the modal to confirm consignacion details
-    setShowConsignacionModal(true);
-    // Calculate the expected consignacion value (pendiente anterior + total de hoy)
+    const nextFotos = Array.from(new Set([...fotosConsignacion, url]));
+    await persistConsignacionMetadata({
+      fotos: nextFotos,
+      principal: nextFotos[0],
+      consignaHoy: true,
+    });
     const valorEsperado = totalEfectivoConPendiente;
-    setValorConsignadoInput(valorEsperado);
-    setConsignacionCompleta(true);
+    if (valorConsignadoInput === '') {
+      setValorConsignadoInput(valorEsperado);
+      setConsignacionCompleta(true);
+      setShowConsignacionModal(true);
+    }
+  };
+
+  const handleRemoveFotoConsignacion = async (fotoUrl: string) => {
+    const nextFotos = fotosConsignacion.filter((foto) => foto !== fotoUrl);
+    await persistConsignacionMetadata({
+      fotos: nextFotos,
+      principal: nextFotos[0] ?? null,
+      valorConsignado: nextFotos.length === 0 ? 0 : undefined,
+    });
+
+    if (nextFotos.length === 0) {
+      setReadyToSend(false);
+      setNuevoPendienteConsignacion(null);
+      setValorConsignadoInput('');
+    }
   };
 
   const handleConfirmConsignacion = () => {
@@ -814,7 +959,7 @@ export default function CuadreWizard() {
                         setLocalCuadre((prev) => ({ ...prev, consigna_hoy: true }));
                         setReadyToSend(false);
                         setNuevoPendienteConsignacion(null);
-                        if (!cuadre?.url_foto_consignacion) {
+                        if (!hayFotoConsignacion) {
                           setValorConsignadoInput('');
                         }
                         await saveCuadre({ consigna_hoy: true });
@@ -830,14 +975,19 @@ export default function CuadreWizard() {
                       checked={!consignaHoy}
                       onChange={async () => {
                         setLocalCuadre((prev) => ({ ...prev, consigna_hoy: false }));
+                        setCuentaConsignacionId('');
+                        setOtraCuentaConsignacion(emptyOtraCuenta);
+                        setFotosConsignacion([]);
                         setReadyToSend(true);
                         setShowConsignacionModal(false);
                         setValorConsignadoInput(0);
                         setNuevoPendienteConsignacion(totalEfectivoConPendiente);
-                        if (cuadre?.url_foto_consignacion) {
-                          await saveCuadre({ url_foto_consignacion: null });
-                        }
-                        await saveCuadre({ consigna_hoy: false });
+                        await saveCuadre({
+                          consigna_hoy: false,
+                          url_foto_consignacion: null,
+                          firma_cajero_url: serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [] }),
+                          valor_consignado: 0,
+                        });
                       }}
                       className="w-4 h-4"
                     />
@@ -846,17 +996,17 @@ export default function CuadreWizard() {
                 </div>
               </div>
 
-              {consignaHoy && !cuadre?.url_foto_consignacion && (
+              {consignaHoy && !hayFotoConsignacion && (
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-yellow-800 font-medium">⚠️ Sin foto de consignación</p>
                   <p className="text-yellow-700 text-sm mt-1">Si envías sin la foto, el cuadre quedará como <strong>Pendiente</strong> y podrás agregar la foto después.</p>
                 </div>
               )}
               
-              {consignaHoy && cuadre?.url_foto_consignacion && (
+              {consignaHoy && hayFotoConsignacion && (
                 <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-green-800 font-medium">✅ Foto de consignación cargada</p>
-                  <p className="text-green-700 text-sm mt-1">El cuadre se marcará como <strong>Enviado</strong> y ya no podrás editarlo.</p>
+                  <p className="text-green-800 font-medium">✅ Soportes de consignación cargados</p>
+                  <p className="text-green-700 text-sm mt-1">Puedes subir varias fotos para el mismo cuadre antes de reenviarlo.</p>
                 </div>
               )}
 
@@ -866,21 +1016,163 @@ export default function CuadreWizard() {
                   <p className="text-blue-700 text-sm mt-1">El <strong>Total General a Consignar</strong> quedará como pendiente para el próximo cuadre.</p>
                 </div>
               )}
+
+              {localCuadre?.estado === 'devuelto' && localCuadre?.observacion_superadmin && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-800 font-medium">Cuadre devuelto por Superadmin</p>
+                  <p className="text-red-700 text-sm mt-1">{localCuadre.observacion_superadmin}</p>
+                </div>
+              )}
               
               {consignaHoy && (
-                <div>
-                  <h3 className="text-lg font-medium mb-3">Foto Consignación</h3>
-                  <UploadFoto
-                    bucket="soportes"
-                    currentUrl={cuadre?.url_foto_consignacion}
-                    onUpload={handleFotoConsignacionUpload}
-                    onRemove={async () => {
-                      await saveCuadre({ url_foto_consignacion: null, valor_consignado: 0 });
-                      setReadyToSend(false);
-                      setNuevoPendienteConsignacion(null);
-                      setValorConsignadoInput('');
-                    }}
-                  />
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-medium mb-3">Cuenta de Consignación</h3>
+                    <div className="space-y-3">
+                      {CUENTAS_CONSIGNACION.map((cuenta) => (
+                        <label
+                          key={cuenta.id}
+                          className={`block rounded-lg border p-4 cursor-pointer transition-colors ${
+                            cuentaConsignacionId === cuenta.id ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="radio"
+                              name="cuentaConsignacion"
+                              checked={cuentaConsignacionId === cuenta.id}
+                              onChange={() => handleCuentaConsignacionChange(cuenta.id)}
+                              className="mt-1 w-4 h-4"
+                            />
+                            <div className="text-sm text-gray-700">
+                              <p className="font-semibold text-gray-900">{cuenta.banco}</p>
+                              <p>Cuenta: {cuenta.numeroCuenta}</p>
+                              <p>Tipo: {cuenta.tipoCuenta}</p>
+                              <p>Titular: {cuenta.titular}</p>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                      <label
+                        className={`block rounded-lg border p-4 cursor-pointer transition-colors ${
+                          usaOtraCuentaConsignacion ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="cuentaConsignacion"
+                            checked={usaOtraCuentaConsignacion}
+                            onChange={() => handleCuentaConsignacionChange('otra')}
+                            className="w-4 h-4"
+                          />
+                          <div>
+                            <p className="font-semibold text-gray-900">Otra</p>
+                            <p className="text-sm text-gray-600">Escribe banco, número de cuenta, tipo y titular.</p>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {usaOtraCuentaConsignacion && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                        <input
+                          type="text"
+                          value={otraCuentaConsignacion.banco}
+                          onChange={(e) => handleOtraCuentaFieldChange('banco', e.target.value)}
+                          onBlur={saveOtraCuentaConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
+                        <input
+                          type="text"
+                          value={otraCuentaConsignacion.numeroCuenta}
+                          onChange={(e) => handleOtraCuentaFieldChange('numeroCuenta', e.target.value)}
+                          onBlur={saveOtraCuentaConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
+                        <input
+                          type="text"
+                          value={otraCuentaConsignacion.tipoCuenta}
+                          onChange={(e) => handleOtraCuentaFieldChange('tipoCuenta', e.target.value)}
+                          onBlur={saveOtraCuentaConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
+                        <input
+                          type="text"
+                          value={otraCuentaConsignacion.titular}
+                          onChange={(e) => handleOtraCuentaFieldChange('titular', e.target.value)}
+                          onBlur={saveOtraCuentaConsignacion}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {!cuentaConsignacionValida && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      Debes seleccionar la cuenta de consignación. Si eliges <strong>Otra</strong>, completa todos los datos.
+                    </div>
+                  )}
+
+                  {cuentaConsignacionSeleccionada && (
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-600">Cuenta seleccionada</p>
+                      <p className="font-semibold text-gray-900">
+                        {cuentaConsignacionSeleccionada.banco} - {cuentaConsignacionSeleccionada.numeroCuenta}
+                      </p>
+                      <p className="text-sm text-gray-700">
+                        {cuentaConsignacionSeleccionada.tipoCuenta} - {cuentaConsignacionSeleccionada.titular}
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h3 className="text-lg font-medium">Fotos de Consignación</h3>
+                      {fotosConsignacion.length > 0 && (
+                        <span className="text-sm text-gray-500">{fotosConsignacion.length} soporte(s)</span>
+                      )}
+                    </div>
+
+                    {fotosConsignacion.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        {fotosConsignacion.map((fotoUrl, index) => (
+                          <div key={fotoUrl} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+                            <p className="text-xs font-medium text-gray-500 mb-2">
+                              {index === 0 ? 'Foto principal' : `Foto ${index + 1}`}
+                            </p>
+                            <UploadFoto
+                              bucket="soportes"
+                              currentUrl={fotoUrl}
+                              onUpload={handleFotoConsignacionUpload}
+                              onRemove={() => handleRemoveFotoConsignacion(fotoUrl)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <UploadFoto
+                      bucket="soportes"
+                      onUpload={handleFotoConsignacionUpload}
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Puedes subir una o varias fotos si la consignación se hizo en varias transacciones.
+                    </p>
+                  </div>
+
                   <button
                     onClick={() => {
                       setShowConsignacionModal(true);
@@ -890,7 +1182,7 @@ export default function CuadreWizard() {
                     }}
                     className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    {cuadre?.url_foto_consignacion ? 'Editar Confirmación de Consignación' : 'Confirmar Consignación'}
+                    {hayFotoConsignacion ? 'Editar Confirmación de Consignación' : 'Confirmar Consignación'}
                   </button>
                 </div>
               )}
@@ -962,10 +1254,11 @@ export default function CuadreWizard() {
                   saving ||
                   !localCuadre?.nombre_administradora ||
                   !localCuadre?.cedula_administradora ||
-                  (consignaHoy && !!cuadre?.url_foto_consignacion && !readyToSend)
+                  !cuentaConsignacionValida ||
+                  (consignaHoy && hayFotoConsignacion && !readyToSend)
                 }
                 className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${
-                  consignaHoy ? (cuadre?.url_foto_consignacion ? 'bg-success text-white' : 'bg-warning text-white') : 'bg-success text-white'
+                  consignaHoy ? (hayFotoConsignacion ? 'bg-success text-white' : 'bg-warning text-white') : 'bg-success text-white'
                 }`}
               >
                 {saving ? (
@@ -974,7 +1267,7 @@ export default function CuadreWizard() {
                     Guardando...
                   </>
                 ) : (
-                  consignaHoy ? (cuadre?.url_foto_consignacion ? 'Enviar Cuadre' : 'Guardar como Pendiente') : 'Enviar Cuadre'
+                  consignaHoy ? (hayFotoConsignacion ? 'Enviar Cuadre' : 'Guardar como Pendiente') : 'Enviar Cuadre'
                 )}
               </button>
             </div>

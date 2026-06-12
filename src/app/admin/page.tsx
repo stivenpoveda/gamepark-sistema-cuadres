@@ -181,6 +181,7 @@ export default function AdminDashboard() {
       const puedeEditar = 
         cuadreForSelectedDate.estado === 'borrador' || 
         cuadreForSelectedDate.estado === 'pendiente' ||
+        cuadreForSelectedDate.estado === 'devuelto' ||
         (cuadreForSelectedDate.estado === 'enviado' &&
           (cuadreForSelectedDate.consigna_hoy ?? true) === true &&
           !cuadreForSelectedDate.url_foto_consignacion);
@@ -382,6 +383,7 @@ export default function AdminDashboard() {
               {cuadreForSelectedDate ? (
                 cuadreForSelectedDate.estado === 'borrador' || 
                 cuadreForSelectedDate.estado === 'pendiente' ||
+                cuadreForSelectedDate.estado === 'devuelto' ||
                 (cuadreForSelectedDate.estado === 'enviado' && !cuadreForSelectedDate.url_foto_consignacion)
                   ? 'Editar'
                   : 'Ver'
@@ -393,6 +395,11 @@ export default function AdminDashboard() {
               <p className="text-sm text-blue-800 mb-2">Estado del cuadre para esta fecha:</p>
               <div className="flex flex-wrap items-center gap-2">
                 {getEstadoBadge(cuadreForSelectedDate.estado)}
+                {cuadreForSelectedDate.estado === 'devuelto' && cuadreForSelectedDate.observacion_superadmin && (
+                  <span className="text-sm text-red-800 bg-red-100 px-2 py-1 rounded font-medium">
+                    Motivo: {cuadreForSelectedDate.observacion_superadmin}
+                  </span>
+                )}
                 {(cuadreForSelectedDate.consigna_hoy ?? true) === true && !cuadreForSelectedDate.url_foto_consignacion && (
                   <span className="text-sm text-orange-600 bg-orange-50 px-2 py-1 rounded">
                     ⚠️ Pendiente foto consignación
@@ -492,6 +499,7 @@ export default function AdminDashboard() {
                               const puedeEditar =
                                 cuadre.estado === 'borrador' ||
                                 cuadre.estado === 'pendiente' ||
+                                cuadre.estado === 'devuelto' ||
                                 (cuadre.estado === 'enviado' &&
                                   (cuadre.consigna_hoy ?? true) === true &&
                                   !cuadre.url_foto_consignacion);
@@ -506,12 +514,14 @@ export default function AdminDashboard() {
                           >
                             {cuadre.estado === 'borrador' ||
                             cuadre.estado === 'pendiente' ||
+                            cuadre.estado === 'devuelto' ||
                             (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)
                               ? 'Editar'
                               : 'Ver'}
                           </button>
                           {(cuadre.estado === 'borrador' ||
                             cuadre.estado === 'pendiente' ||
+                            cuadre.estado === 'devuelto' ||
                             (cuadre.estado === 'enviado' && (cuadre.consigna_hoy ?? true) === true && !cuadre.url_foto_consignacion)) && (
                             <button
                               onClick={() => handleDeleteCuadre(cuadre.id)}

@@ -115,3 +115,94 @@ export const getGastoCategoriaLabel = (categoria: unknown) => {
   if (normalized === GASTO_CATEGORIA_TRANSPORTE_CODE) return GASTO_CATEGORIA_TRANSPORTE_LABEL;
   return normalized;
 };
+
+export type CuentaConsignacionPredefinida = {
+  id: string;
+  banco: string;
+  numeroCuenta: string;
+  tipoCuenta: string;
+  titular: string;
+};
+
+export type OtraCuentaConsignacion = {
+  banco: string;
+  numeroCuenta: string;
+  tipoCuenta: string;
+  titular: string;
+};
+
+export type ConsignacionMetadata = {
+  version: 1;
+  cuentaId?: string;
+  otraCuenta?: OtraCuentaConsignacion | null;
+  fotos?: string[];
+};
+
+export const CUENTAS_CONSIGNACION: CuentaConsignacionPredefinida[] = [
+  { id: 'bancolombia-20260566437', banco: 'Bancolombia', numeroCuenta: '20260566437', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'bancolombia-20125684512', banco: 'Bancolombia', numeroCuenta: '20125684512', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'bancolombia-65663758696', banco: 'Bancolombia', numeroCuenta: '65663758696', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'bogota-223493834', banco: 'Banco Bogota', numeroCuenta: '223493834', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'bogota-657000972', banco: 'Banco Bogota', numeroCuenta: '657000972', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'davivienda-2669997203', banco: 'Davivienda', numeroCuenta: '2669997203', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'davivienda-260012-5575', banco: 'Davivienda', numeroCuenta: '260012-5575', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'occidente-22584-6112', banco: 'B. occidente', numeroCuenta: '22584-6112', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'davidarias-bogota-14207-6025', banco: 'Banco Bogota', numeroCuenta: '14207-6025', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
+  { id: 'davidarias-bancolombia-5142201-8682', banco: 'Bancolombia', numeroCuenta: '5142201-8682', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
+  { id: 'davidarias-davivienda-17977000-1354', banco: 'Davivienda', numeroCuenta: '17977000-1354', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
+];
+
+const isJsonObject = (value: string) => value.trim().startsWith('{') && value.trim().endsWith('}');
+
+export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | null => {
+  const text = String(raw ?? '').trim();
+  if (!text || !isJsonObject(text)) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      version: 1,
+      cuentaId: typeof parsed.cuentaId === 'string' ? parsed.cuentaId : undefined,
+      otraCuenta: parsed.otraCuenta && typeof parsed.otraCuenta === 'object'
+        ? {
+            banco: String(parsed.otraCuenta.banco || ''),
+            numeroCuenta: String(parsed.otraCuenta.numeroCuenta || ''),
+            tipoCuenta: String(parsed.otraCuenta.tipoCuenta || ''),
+            titular: String(parsed.otraCuenta.titular || ''),
+          }
+        : null,
+      fotos: Array.isArray(parsed.fotos)
+        ? parsed.fotos.map((item: unknown) => String(item || '')).filter(Boolean)
+        : [],
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const serializeConsignacionMetadata = (input: {
+  cuentaId?: string;
+  otraCuenta?: OtraCuentaConsignacion | null;
+  fotos?: string[];
+}) => {
+  const payload: ConsignacionMetadata = {
+    version: 1,
+    cuentaId: input.cuentaId || undefined,
+    otraCuenta: input.otraCuenta || null,
+    fotos: (input.fotos || []).filter(Boolean),
+  };
+  return JSON.stringify(payload);
+};
+
+export const getCuentaConsignacionById = (cuentaId: string | null | undefined) =>
+  CUENTAS_CONSIGNACION.find((cuenta) => cuenta.id === cuentaId);
+
+export const getConsignacionFotos = (input: {
+  url_foto_consignacion?: string | null;
+  firma_cajero_url?: string | null;
+}) => {
+  const metadata = parseConsignacionMetadata(input.firma_cajero_url);
+  const fotos = [input.url_foto_consignacion || '', ...(metadata?.fotos || [])].filter(Boolean);
+  return Array.from(new Set(fotos));
+};
