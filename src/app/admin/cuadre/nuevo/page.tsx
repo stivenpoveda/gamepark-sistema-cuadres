@@ -171,16 +171,30 @@ export default function CuadreWizard() {
         setUser(userData);
         setPuntoVenta(puntoVentaData || null);
 
-        const { data: ultimosCuadresEnviados } = await supabase
+        const { data: cuadresAnteriores } = await supabase
           .from('cuadres_diarios')
-          .select('consignacion_pendiente,fecha')
+          .select('consignacion_pendiente,fecha,consigna_hoy,url_foto_consignacion,valor_consignado,estado')
           .eq('punto_de_venta_id', userData.punto_de_venta_id)
           .lt('fecha', fechaSeleccionada)
-          .not('url_foto_consignacion', 'is', null)
           .order('fecha', { ascending: false })
-          .limit(1);
+          .limit(60);
 
-        const pendienteArrastre = Number(ultimosCuadresEnviados?.[0]?.consignacion_pendiente || 0);
+        const ultimoCuadreCerradoConPendiente = (cuadresAnteriores || []).find((c) => {
+          if ((c.estado || '') === 'borrador' || (c.estado || '') === 'pendiente' || (c.estado || '') === 'devuelto') {
+            return false;
+          }
+
+          const consignaHoyAnterior = (c.consigna_hoy ?? true) === true;
+          const cerrado =
+            !consignaHoyAnterior ||
+            Boolean(c.url_foto_consignacion) ||
+            (Number(c.valor_consignado) || 0) > 0;
+
+          if (!cerrado) return false;
+          return (Number(c.consignacion_pendiente) || 0) > 0;
+        });
+
+        const pendienteArrastre = Number(ultimoCuadreCerradoConPendiente?.consignacion_pendiente || 0);
 
         // Consulta simplificada sin relaciones anidadas
         const { data: existingCuadre, error: cuadreError } = await supabase
