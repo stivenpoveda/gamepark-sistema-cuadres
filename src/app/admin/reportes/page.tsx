@@ -9,6 +9,22 @@ import type { CuadreDiario, Usuario, PuntoDeVenta } from '@/types';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateOnly = (value: string) => value.split('T')[0];
+const formatExcelDate = (value: string) => formatDate(normalizeDateOnly(value));
+
+const applyNumericFormat = (worksheet: ExcelJS.Worksheet, keys: string[]) => {
+  keys.forEach((key) => {
+    worksheet.getColumn(key).numFmt = '"$"#,##0';
+  });
+};
+
 export default function ReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -85,8 +101,8 @@ export default function ReportesPage() {
       const today = new Date();
       const lastMonth = new Date(today);
       lastMonth.setMonth(today.getMonth() - 1);
-      setFechaFin(today.toISOString().split('T')[0]);
-      setFechaInicio(lastMonth.toISOString().split('T')[0]);
+      setFechaFin(toDateInputValue(today));
+      setFechaInicio(toDateInputValue(lastMonth));
 
       setLoading(false);
     };
@@ -176,17 +192,27 @@ export default function ReportesPage() {
       });
 
       worksheet.addRow({
-        fecha: new Date(c.fecha).toLocaleDateString(),
-        ventaTotal: formatCOP(c.recaudo),
-        valorGeneralAConsignar: formatCOP(metrics.totalGeneralAConsignar),
-        ventaDatafono: formatCOP(c.venta_tarjetas),
-        valorConsignado: formatCOP(c.valor_consignado),
-        deducciones: formatCOP(gastos + turneros),
-        pendiente: formatCOP(c.consignacion_pendiente),
-        totalFisico: formatCOP(c.total_fisico),
+        fecha: formatExcelDate(c.fecha),
+        ventaTotal: Number(c.recaudo) || 0,
+        valorGeneralAConsignar: Number(metrics.totalGeneralAConsignar) || 0,
+        ventaDatafono: Number(c.venta_tarjetas) || 0,
+        valorConsignado: Number(c.valor_consignado) || 0,
+        deducciones: Number(gastos + turneros) || 0,
+        pendiente: Number(c.consignacion_pendiente) || 0,
+        totalFisico: Number(c.total_fisico) || 0,
         estado: c.estado,
       });
     });
+
+    applyNumericFormat(worksheet, [
+      'ventaTotal',
+      'valorGeneralAConsignar',
+      'ventaDatafono',
+      'valorConsignado',
+      'deducciones',
+      'pendiente',
+      'totalFisico',
+    ]);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {

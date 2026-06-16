@@ -2,12 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getGastoCategoriaLabel } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, PuntoDeVenta } from '@/types';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
+
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDateOnly = (value: string) => value.split('T')[0];
+const formatExcelDate = (value: string) => formatDate(normalizeDateOnly(value));
+
+const applyNumericFormat = (worksheet: ExcelJS.Worksheet, keys: string[]) => {
+  keys.forEach((key) => {
+    const column = worksheet.getColumn(key);
+    column.numFmt = '"$"#,##0';
+  });
+};
 
 export default function SuperadminReportesPage() {
   const router = useRouter();
@@ -67,8 +84,8 @@ export default function SuperadminReportesPage() {
       const today = new Date();
       const lastMonth = new Date(today);
       lastMonth.setMonth(today.getMonth() - 1);
-      setFechaFin(today.toISOString().split('T')[0]);
-      setFechaInicio(lastMonth.toISOString().split('T')[0]);
+      setFechaFin(toDateInputValue(today));
+      setFechaInicio(toDateInputValue(lastMonth));
 
       setLoading(false);
     };
@@ -182,17 +199,27 @@ export default function SuperadminReportesPage() {
 
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
-        fecha: new Date(c.fecha).toLocaleDateString(),
-        ventaTotal: formatCOP(c.recaudo),
-        valorGeneralAConsignar: formatCOP(metrics.totalGeneralAConsignar),
-        ventaDatafono: formatCOP(c.venta_tarjetas),
-        valorConsignado: formatCOP(c.valor_consignado),
-        deducciones: formatCOP(gastos + turneros),
-        pendiente: formatCOP(c.consignacion_pendiente),
-        totalFisico: formatCOP(c.total_fisico),
+        fecha: formatExcelDate(c.fecha),
+        ventaTotal: Number(c.recaudo) || 0,
+        valorGeneralAConsignar: Number(metrics.totalGeneralAConsignar) || 0,
+        ventaDatafono: Number(c.venta_tarjetas) || 0,
+        valorConsignado: Number(c.valor_consignado) || 0,
+        deducciones: Number(gastos + turneros) || 0,
+        pendiente: Number(c.consignacion_pendiente) || 0,
+        totalFisico: Number(c.total_fisico) || 0,
         estado: c.estado,
       });
     });
+
+    applyNumericFormat(worksheet, [
+      'ventaTotal',
+      'valorGeneralAConsignar',
+      'ventaDatafono',
+      'valorConsignado',
+      'deducciones',
+      'pendiente',
+      'totalFisico',
+    ]);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -214,22 +241,81 @@ export default function SuperadminReportesPage() {
     worksheet.columns = [
       { header: 'Punto de Venta', key: 'pdv', width: 25 },
       { header: 'Fecha', key: 'fecha', width: 15 },
-      { header: 'Gastos', key: 'gastos', width: 15 },
-      { header: 'Turneros', key: 'turneros', width: 15 },
-      { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 24 },
+      { header: 'Tipo', key: 'tipo', width: 14 },
+      { header: 'Categoria', key: 'categoria', width: 28 },
+      { header: 'Descripcion', key: 'descripcion', width: 42 },
+      { header: 'Valor', key: 'valor', width: 16 },
     ];
 
+    const cuadreIds = cuadresFiltrados.map((c) => c.id).filter(Boolean);
+    if (cuadreIds.length === 0) {
+      toast.error('No hay deducciones para exportar con esos filtros');
+      return;
+    }
+
+    const [gastosRes, turnerosRes] = await Promise.all([
+      supabase.from('gastos_diarios').select('cuadre_id,categoria,descripcion,valor').in('cuadre_id', cuadreIds),
+      supabase.from('pagos_turneros').select('cuadre_id,nombre_turnero,horario,valor').in('cuadre_id', cuadreIds),
+    ]);
+
+    const gastosById = (gastosRes.data || []).reduce<Record<string, Array<{ categoria: string; descripcion: string; valor: number }>>>(
+      (acc, gasto: any) => {
+        const cuadreId = String(gasto.cuadre_id || '');
+        if (!cuadreId) return acc;
+        acc[cuadreId] = acc[cuadreId] || [];
+        acc[cuadreId].push({
+          categoria: getGastoCategoriaLabel(gasto.categoria || 'Otros'),
+          descripcion: String(gasto.descripcion || ''),
+          valor: Number(gasto.valor) || 0,
+        });
+        return acc;
+      },
+      {}
+    );
+
+    const turnerosById = (turnerosRes.data || []).reduce<Record<string, Array<{ descripcion: string; valor: number }>>>(
+      (acc, turnero: any) => {
+        const cuadreId = String(turnero.cuadre_id || '');
+        if (!cuadreId) return acc;
+        acc[cuadreId] = acc[cuadreId] || [];
+        const nombre = String(turnero.nombre_turnero || 'Turnero');
+        const horario = String(turnero.horario || '').trim();
+        acc[cuadreId].push({
+          descripcion: horario ? `${nombre} - ${horario}` : nombre,
+          valor: Number(turnero.valor) || 0,
+        });
+        return acc;
+      },
+      {}
+    );
+
     cuadresFiltrados.forEach((c) => {
-      const gastos = gastosByCuadreId[c.id] || 0;
-      const turneros = turnerosByCuadreId[c.id] || 0;
-      worksheet.addRow({
-        pdv: c.punto_de_venta?.nombre || 'N/A',
-        fecha: new Date(c.fecha).toLocaleDateString(),
-        gastos: formatCOP(gastos),
-        turneros: formatCOP(turneros),
-        deducciones: formatCOP(gastos + turneros),
+      const fecha = formatExcelDate(c.fecha);
+
+      (gastosById[c.id] || []).forEach((gasto) => {
+        worksheet.addRow({
+          pdv: c.punto_de_venta?.nombre || 'N/A',
+          fecha,
+          tipo: 'Gasto',
+          categoria: gasto.categoria,
+          descripcion: gasto.descripcion,
+          valor: gasto.valor,
+        });
+      });
+
+      (turnerosById[c.id] || []).forEach((turnero) => {
+        worksheet.addRow({
+          pdv: c.punto_de_venta?.nombre || 'N/A',
+          fecha,
+          tipo: 'Turnero',
+          categoria: 'Turneros',
+          descripcion: turnero.descripcion,
+          valor: turnero.valor,
+        });
       });
     });
+
+    applyNumericFormat(worksheet, ['valor']);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -274,12 +360,14 @@ export default function SuperadminReportesPage() {
 
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
-        fecha: new Date(c.fecha).toLocaleDateString(),
-        ventaTotal: formatCOP(c.recaudo),
-        ventaDatafono: formatCOP(c.venta_tarjetas),
-        ventaEfectivo: formatCOP(metrics.totalEfectivoEsperado),
+        fecha: formatExcelDate(c.fecha),
+        ventaTotal: Number(c.recaudo) || 0,
+        ventaDatafono: Number(c.venta_tarjetas) || 0,
+        ventaEfectivo: Number(metrics.totalEfectivoEsperado) || 0,
       });
     });
+
+    applyNumericFormat(worksheet, ['ventaTotal', 'ventaDatafono', 'ventaEfectivo']);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -307,10 +395,12 @@ export default function SuperadminReportesPage() {
     cuadresFiltrados.forEach((c) => {
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
-        fecha: new Date(c.fecha).toLocaleDateString(),
-        ventaDatafono: formatCOP(c.venta_tarjetas),
+        fecha: formatExcelDate(c.fecha),
+        ventaDatafono: Number(c.venta_tarjetas) || 0,
       });
     });
+
+    applyNumericFormat(worksheet, ['ventaDatafono']);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -351,14 +441,16 @@ export default function SuperadminReportesPage() {
       const conFoto = Boolean(c.url_foto_consignacion);
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
-        fecha: new Date(c.fecha).toLocaleDateString(),
+        fecha: formatExcelDate(c.fecha),
         consignaHoy: consignaHoy ? 'Sí' : 'No',
-        valorConsignado: formatCOP(c.valor_consignado),
-        pendiente: formatCOP(c.consignacion_pendiente),
+        valorConsignado: Number(c.valor_consignado) || 0,
+        pendiente: Number(c.consignacion_pendiente) || 0,
         estado: c.estado,
         conFoto: conFoto ? 'Sí' : 'No',
       });
     });
+
+    applyNumericFormat(worksheet, ['valorConsignado', 'pendiente']);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
