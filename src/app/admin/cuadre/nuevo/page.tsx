@@ -180,7 +180,7 @@ export default function CuadreWizard() {
           .limit(60);
 
         const ultimoCuadreCerradoConPendiente = (cuadresAnteriores || []).find((c) => {
-          if ((c.estado || '') === 'borrador' || (c.estado || '') === 'pendiente' || (c.estado || '') === 'devuelto') {
+          if ((c.estado || '') === 'borrador' || (c.estado || '') === 'devuelto') {
             return false;
           }
 
@@ -188,7 +188,8 @@ export default function CuadreWizard() {
           const cerrado =
             !consignaHoyAnterior ||
             Boolean(c.url_foto_consignacion) ||
-            (Number(c.valor_consignado) || 0) > 0;
+            (Number(c.valor_consignado) || 0) > 0 ||
+            (c.estado || '') === 'pendiente';
 
           if (!cerrado) return false;
           return (Number(c.consignacion_pendiente) || 0) > 0;
@@ -565,6 +566,13 @@ export default function CuadreWizard() {
     try {
       const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
       const nuevoEstado = consignaHoy ? (hayFotoConsignacion ? 'enviado' : 'pendiente') : 'enviado';
+
+      const valorConsignado = consignaHoy && readyToSend ? Number(valorConsignadoInput) || 0 : 0;
+      const pendienteCalculado = consignaHoy
+        ? readyToSend
+          ? Math.max(0, totalEfectivoConPendiente - valorConsignado)
+          : totalEfectivoConPendiente
+        : totalEfectivoConPendiente;
       
       const updates = {
         ...localCuadre,
@@ -579,19 +587,17 @@ export default function CuadreWizard() {
         firma_cajero_url: consignaHoy
           ? getConsignacionMetadataPayload()
           : serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [] }),
-        ...(nuevoEstado === 'enviado'
-          ? consignaHoy
-            ? {
-                url_foto_consignacion: fotoConsignacionPrincipal,
-                valor_consignado: Number(valorConsignadoInput) || 0,
-                consignacion_pendiente: Math.max(0, nuevoPendienteConsignacion ?? 0),
-              }
-            : {
-                url_foto_consignacion: null,
-                valor_consignado: 0,
-                consignacion_pendiente: totalEfectivoConPendiente,
-              }
-          : {}),
+        ...(consignaHoy
+          ? {
+              url_foto_consignacion: fotoConsignacionPrincipal,
+              valor_consignado: valorConsignado,
+              consignacion_pendiente: pendienteCalculado,
+            }
+          : {
+              url_foto_consignacion: null,
+              valor_consignado: 0,
+              consignacion_pendiente: totalEfectivoConPendiente,
+            }),
       };
       
       await saveCuadre(updates);
@@ -641,13 +647,18 @@ export default function CuadreWizard() {
     }
   };
 
-  const handleConfirmConsignacion = () => {
+  const handleConfirmConsignacion = async () => {
     const valorConsignado = Number(valorConsignadoInput) || 0;
     const valorEsperado = totalEfectivoConPendiente;
     const nuevoPendiente = Math.max(0, valorEsperado - valorConsignado);
     setNuevoPendienteConsignacion(nuevoPendiente);
     setShowConsignacionModal(false);
     setReadyToSend(true);
+    await saveCuadre({
+      consigna_hoy: true,
+      valor_consignado: valorConsignado,
+      consignacion_pendiente: nuevoPendiente,
+    });
   };
 
   const handleAddGasto = async () => {

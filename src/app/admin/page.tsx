@@ -114,7 +114,7 @@ export default function AdminDashboard() {
   const ultimoCuadreConPendiente = cuadres.reduce<CuadreDiario | null>((acc, c) => {
     if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
     const consignaHoy = (c.consigna_hoy ?? true) === true;
-    const esCerrado = !consignaHoy || !!c.url_foto_consignacion;
+    const esCerrado = !consignaHoy || Boolean(c.url_foto_consignacion) || (Number(c.valor_consignado) || 0) > 0 || c.estado === 'pendiente';
     if (!esCerrado) return acc;
     if (!acc) return c;
     const accTime = new Date(acc.fecha).getTime();
