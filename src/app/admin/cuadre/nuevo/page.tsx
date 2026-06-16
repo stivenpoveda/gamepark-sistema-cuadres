@@ -179,7 +179,7 @@ export default function CuadreWizard() {
           .order('fecha', { ascending: false })
           .limit(60);
 
-        const ultimoCuadreCerradoConPendiente = (cuadresAnteriores || []).find((c) => {
+        const ultimoCuadreCerrado = (cuadresAnteriores || []).find((c) => {
           if ((c.estado || '') === 'borrador' || (c.estado || '') === 'devuelto') {
             return false;
           }
@@ -192,10 +192,10 @@ export default function CuadreWizard() {
             (c.estado || '') === 'pendiente';
 
           if (!cerrado) return false;
-          return (Number(c.consignacion_pendiente) || 0) > 0;
+          return true;
         });
 
-        const pendienteArrastre = Number(ultimoCuadreCerradoConPendiente?.consignacion_pendiente || 0);
+        const pendienteArrastre = Number(ultimoCuadreCerrado?.consignacion_pendiente || 0);
 
         // Consulta simplificada sin relaciones anidadas
         const { data: existingCuadre, error: cuadreError } = await supabase

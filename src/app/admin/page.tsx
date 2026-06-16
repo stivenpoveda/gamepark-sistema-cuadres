@@ -111,8 +111,7 @@ export default function AdminDashboard() {
   }, [router]);
 
   const cuadreForSelectedDate = cuadres.find(c => c.fecha === selectedDate);
-  const ultimoCuadreConPendiente = cuadres.reduce<CuadreDiario | null>((acc, c) => {
-    if (Number(c.consignacion_pendiente || 0) <= 0) return acc;
+  const ultimoCuadreCerrado = cuadres.reduce<CuadreDiario | null>((acc, c) => {
     const consignaHoy = (c.consigna_hoy ?? true) === true;
     const esCerrado = !consignaHoy || Boolean(c.url_foto_consignacion) || (Number(c.valor_consignado) || 0) > 0 || c.estado === 'pendiente';
     if (!esCerrado) return acc;
@@ -141,7 +140,7 @@ export default function AdminDashboard() {
   const ultimoDesembolsos = ultimoCuadre ? (gastosPorCuadreId[ultimoCuadre.id] || 0) + (turnerosPorCuadreId[ultimoCuadre.id] || 0) : 0;
   const ultimoEfectivo = ultimoCuadreMetrics?.totalEfectivoEsperado || 0;
   const ultimoConsignaciones = ultimoCuadre ? (((ultimoCuadre.consigna_hoy ?? true) === false) ? 0 : Number(ultimoCuadre.valor_consignado) || 0) : 0;
-  const ultimoSaldoEnCaja = ultimoCuadreConPendiente?.consignacion_pendiente || 0;
+  const ultimoSaldoEnCaja = ultimoCuadreCerrado?.consignacion_pendiente || 0;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -407,7 +406,7 @@ export default function AdminDashboard() {
                 )}
                 {cuadreForSelectedDate.consignacion_pendiente &&
                   cuadreForSelectedDate.consignacion_pendiente > 0 &&
-                  ultimoCuadreConPendiente?.id === cuadreForSelectedDate.id && (
+                  ultimoCuadreCerrado?.id === cuadreForSelectedDate.id && (
                   <span className="text-sm text-orange-800 bg-orange-100 px-2 py-1 rounded font-medium">
                     ⚠️ Faltante por consignar: {formatCOP(cuadreForSelectedDate.consignacion_pendiente)}
                   </span>
