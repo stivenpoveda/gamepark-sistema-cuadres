@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate, getGastoCategoriaLabel } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getCuentaConsignacionById, getGastoCategoriaLabel, parseConsignacionMetadata } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, PuntoDeVenta } from '@/types';
@@ -422,6 +422,9 @@ export default function SuperadminReportesPage() {
     worksheet.columns = [
       { header: 'Punto de Venta', key: 'pdv', width: 25 },
       { header: 'Fecha', key: 'fecha', width: 15 },
+      { header: 'Banco', key: 'banco', width: 18 },
+      { header: 'Tipo Cuenta', key: 'tipoCuenta', width: 14 },
+      { header: 'Numero Cuenta', key: 'numeroCuenta', width: 18 },
       { header: 'Consigna Hoy', key: 'consignaHoy', width: 12 },
       { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
       { header: 'Pendiente', key: 'pendiente', width: 15 },
@@ -439,9 +442,17 @@ export default function SuperadminReportesPage() {
     consignaciones.forEach((c) => {
       const consignaHoy = (c.consigna_hoy ?? true) === true;
       const conFoto = Boolean(c.url_foto_consignacion);
+      const metadata = parseConsignacionMetadata((c as any).firma_cajero_url);
+      const cuenta =
+        metadata?.cuentaId === 'otra'
+          ? metadata.otraCuenta
+          : getCuentaConsignacionById(metadata?.cuentaId);
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
         fecha: formatExcelDate(c.fecha),
+        banco: cuenta?.banco || '',
+        tipoCuenta: cuenta?.tipoCuenta || '',
+        numeroCuenta: cuenta?.numeroCuenta || '',
         consignaHoy: consignaHoy ? 'Sí' : 'No',
         valorConsignado: Number(c.valor_consignado) || 0,
         pendiente: Number(c.consignacion_pendiente) || 0,
