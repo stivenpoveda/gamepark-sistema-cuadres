@@ -193,60 +193,7 @@ export default function AdminDashboard() {
         router.push(`/admin/cuadre/${cuadreForSelectedDate.id}`);
       }
     } else {
-      // Crear nuevo cuadre y redirigir al wizard
-      const insertData: Record<string, any> = {
-        punto_de_venta_id: puntoVenta.id,
-        usuario_id: user.id,
-        fecha: selectedDate,
-        estado: 'borrador',
-        recaudo: 0,
-        venta_tarjetas: 0,
-        venta_fiesta: 0,
-        venta_confiteria: 0,
-        recibos: 0,
-        venta_cajero_auto: 0,
-        tar_inicial: 0,
-        tar_consumo: 0,
-        tar_fiestas: 0,
-        tar_malas: 0,
-        tar_final: 0,
-        total_fisico: 0,
-        total_sistema: 0,
-        sobrante: 0,
-        faltante: 0,
-        consignacion_pendiente: 0,
-        valor_consignado: 0,
-        consigna_hoy: true,
-      };
-
-      const doInsert = async (payload: Record<string, any>) => {
-        const { data, error } = await supabase.from('cuadres_diarios').insert(payload).select().single();
-        if (error) throw error;
-        return data;
-      };
-
-      try {
-        await doInsert(insertData);
-      } catch (e: any) {
-        const msg = String(e?.message || '');
-        const match = msg.match(/Could not find the '([^']+)' column/i);
-        const missingColumn = match?.[1];
-        if (e?.code === 'PGRST204' && missingColumn && missingColumn in insertData) {
-          const retryData = { ...insertData };
-          delete retryData[missingColumn];
-          try {
-            await doInsert(retryData);
-          } catch (e2: any) {
-            toast.error('Error al crear el cuadre: ' + (e2?.message || 'Error'));
-            return;
-          }
-        } else {
-          toast.error('Error al crear el cuadre: ' + (e?.message || 'Error'));
-          return;
-        }
-      }
-
-      // Ir al wizard con la fecha
+      // Ir al wizard con la fecha (el wizard se encarga de crear el cuadre de forma idempotente)
       router.push(`/admin/cuadre/nuevo?date=${selectedDate}`);
     }
   };

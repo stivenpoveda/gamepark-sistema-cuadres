@@ -7,10 +7,9 @@ import {
   formatCOP,
   formatDate,
   GASTO_CATEGORIA_TRANSPORTE_LABEL,
-  getConsignacionFotos,
+  getConsignacionSoportes,
   getCuentaConsignacionById,
   getGastoCategoriaLabel,
-  parseConsignacionMetadata,
 } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
@@ -209,12 +208,7 @@ export default function CuadreDetalle() {
   const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
   const pendienteInicial = cuadreMetrics.pendienteInicial;
   const ventaAreasComunes = Number(cuadre.venta_confiteria || 0) || Number(cuadre.recibos || 0);
-  const consignacionMetadata = parseConsignacionMetadata(cuadre.firma_cajero_url);
-  const cuentaConsignacion =
-    consignacionMetadata?.cuentaId === 'otra'
-      ? consignacionMetadata.otraCuenta
-      : getCuentaConsignacionById(consignacionMetadata?.cuentaId);
-  const fotosConsignacion = getConsignacionFotos({
+  const consignacionesDetalle = getConsignacionSoportes({
     url_foto_consignacion: cuadre.url_foto_consignacion,
     firma_cajero_url: cuadre.firma_cajero_url,
   });
@@ -1211,50 +1205,69 @@ export default function CuadreDetalle() {
             </div>
           ) : null}
 
-          {fotosConsignacion.length > 0 || cuentaConsignacion || cuadre.nombre_administradora || cuadre.cedula_administradora ? (
+          {consignacionesDetalle.length > 0 || cuadre.nombre_administradora || cuadre.cedula_administradora ? (
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4 text-gray-800">Consignación y Administradora</h2>
-              
-              {cuentaConsignacion && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-medium mb-3 text-gray-800">Cuenta de Consignación</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Banco</p>
-                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.banco || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Número de Cuenta</p>
-                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.numeroCuenta || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Tipo de Cuenta</p>
-                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.tipoCuenta || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Titular</p>
-                      <p className="text-base font-semibold text-gray-900">{cuentaConsignacion.titular || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {fotosConsignacion.length > 0 && (
+              {consignacionesDetalle.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-medium mb-3 text-gray-800">Fotos de Consignación</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {fotosConsignacion.map((fotoUrl, index) => (
-                      <div key={fotoUrl} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-                        <p className="text-xs font-medium text-gray-500 mb-2">
-                          {index === 0 ? 'Foto principal' : `Foto ${index + 1}`}
-                        </p>
-                        <img
-                          src={fotoUrl}
-                          alt={`Consignación ${index + 1}`}
-                          className="w-full rounded border border-gray-200 shadow-sm"
-                        />
-                      </div>
-                    ))}
+                  <h3 className="text-lg font-medium mb-3 text-gray-800">Consignaciones Registradas</h3>
+                  <div className="space-y-4">
+                    {consignacionesDetalle.map((consignacion, index) => {
+                      const cuentaConsignacion =
+                        consignacion.cuentaId === 'otra'
+                          ? consignacion.otraCuenta
+                          : getCuentaConsignacionById(consignacion.cuentaId);
+                      return (
+                        <div key={consignacion.id || `${consignacion.fotoUrl}-${index}`} className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                            <p className="font-semibold text-gray-900">Consignación {index + 1}</p>
+                            <span className="text-xs font-medium text-gray-500">
+                              {index === 0 ? 'Soporte principal' : 'Soporte adicional'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <p className="text-sm text-gray-600">Banco</p>
+                              <p className="text-base font-semibold text-gray-900">
+                                {cuentaConsignacion?.banco || consignacion.otraCuenta?.banco || 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Número de Cuenta</p>
+                              <p className="text-base font-semibold text-gray-900">
+                                {cuentaConsignacion?.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Tipo de Cuenta</p>
+                              <p className="text-base font-semibold text-gray-900">
+                                {cuentaConsignacion?.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Titular</p>
+                              <p className="text-base font-semibold text-gray-900">
+                                {cuentaConsignacion?.titular || consignacion.otraCuenta?.titular || 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Valor Informado</p>
+                              <p className="text-base font-semibold text-gray-900">
+                                {formatCOP(Number(consignacion.valor) || 0)}
+                              </p>
+                            </div>
+                          </div>
+                          {consignacion.fotoUrl && (
+                            <img
+                              src={consignacion.fotoUrl}
+                              alt={`Consignación ${index + 1}`}
+                              className="w-full max-w-lg rounded border border-gray-200 shadow-sm"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -1,24 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   CUENTAS_CONSIGNACION,
   calcCuadreMetrics,
   formatCOP,
   formatDate,
-  getConsignacionFotos,
+  getConsignacionSoportes,
   getGastoCategoriaLabel,
   getCuentaConsignacionById,
   getTodayString,
   GASTO_CATEGORIA_TRANSPORTE_CODE,
   normalizeGastoCategoria,
-  parseConsignacionMetadata,
   serializeConsignacionMetadata,
+  type ConsignacionSoporte,
   type OtraCuentaConsignacion,
 } from '@/lib/utils';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta, GastoDiario, PagoTurnero, SupabaseError } from '@/types';
 import UploadFoto from '@/components/UploadFoto';
 import toast from 'react-hot-toast';
@@ -47,12 +47,23 @@ const categoriasGastos = [
 
 export default function CuadreWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const emptyOtraCuenta: OtraCuentaConsignacion = {
     banco: '',
     numeroCuenta: '',
     tipoCuenta: '',
     titular: '',
   };
+  const createEmptyConsignacion = (): ConsignacionSoporte => ({
+    id: `consignacion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    fotoUrl: '',
+    valor: 0,
+    cuentaId: '',
+    otraCuenta: null,
+    banco: '',
+    tipoCuenta: '',
+    numeroCuenta: '',
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1);
@@ -70,18 +81,14 @@ export default function CuadreWizard() {
   const [valorConsignadoInput, setValorConsignadoInput] = useState<number | ''>('');
   const [nuevoPendienteConsignacion, setNuevoPendienteConsignacion] = useState<number | null>(null);
   const [readyToSend, setReadyToSend] = useState(false);
+  const [pendienteArrastreActual, setPendienteArrastreActual] = useState(0);
+  const initGuardRef = useRef<string | null>(null);
 
   // Local state for form fields to prevent lag
   const [localCuadre, setLocalCuadre] = useState<Partial<CuadreDiario>>({});
-  const [cuentaConsignacionId, setCuentaConsignacionId] = useState('');
-  const [bancoConsignacion, setBancoConsignacion] = useState('');
-  const [tipoCuentaConsignacion, setTipoCuentaConsignacion] = useState('');
-  const [numeroCuentaConsignacion, setNumeroCuentaConsignacion] = useState('');
-  const [otraCuentaConsignacion, setOtraCuentaConsignacion] = useState<OtraCuentaConsignacion>(emptyOtraCuenta);
-  const [fotosConsignacion, setFotosConsignacion] = useState<string[]>([]);
+  const [consignacionSoportes, setConsignacionSoportes] = useState<ConsignacionSoporte[]>([]);
 
-  // Obtener la fecha de los query params
-  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  // Obtener la fecha desde App Router para evitar que el primer render use la fecha de hoy por error.
   const fechaSeleccionada = searchParams.get('date') || getTodayString();
 
   const normalizeCuadreVentas = (c: any) => {
@@ -95,39 +102,59 @@ export default function CuadreWizard() {
   };
 
   const hydrateConsignacionState = (record: any) => {
-    const metadata = parseConsignacionMetadata(record?.firma_cajero_url);
-    const cuentaPredefinida = getCuentaConsignacionById(metadata?.cuentaId);
-    setCuentaConsignacionId(metadata?.cuentaId || '');
-    setBancoConsignacion(cuentaPredefinida?.banco || '');
-    setTipoCuentaConsignacion(cuentaPredefinida?.tipoCuenta || '');
-    setNumeroCuentaConsignacion(cuentaPredefinida?.numeroCuenta || '');
-    setOtraCuentaConsignacion(
-      metadata?.otraCuenta
-        ? {
-            banco: metadata.otraCuenta.banco || '',
-            numeroCuenta: metadata.otraCuenta.numeroCuenta || '',
-            tipoCuenta: metadata.otraCuenta.tipoCuenta || '',
-            titular: metadata.otraCuenta.titular || '',
-          }
-        : emptyOtraCuenta
-    );
-    setFotosConsignacion(getConsignacionFotos(record));
+    setConsignacionSoportes(getConsignacionSoportes(record));
+  };
+
+  const hydrateConsignacionConfirmationState = (record: any, pendienteBase: number) => {
+    const consignaHoyRecord = (record?.consigna_hoy ?? true) === true;
+    const valorConsignadoRecord = Number(record?.valor_consignado || 0);
+    const pendienteRecord = Number(record?.consignacion_pendiente || 0);
+
+    setPendienteArrastreActual(pendienteBase);
+
+    if (!consignaHoyRecord) {
+      setConsignacionCompleta(false);
+      setValorConsignadoInput(0);
+      setNuevoPendienteConsignacion(pendienteRecord);
+      setReadyToSend(true);
+      return;
+    }
+
+    if (valorConsignadoRecord > 0 || pendienteRecord > 0) {
+      setConsignacionCompleta(pendienteRecord === 0);
+      setValorConsignadoInput(valorConsignadoRecord);
+      setNuevoPendienteConsignacion(pendienteRecord);
+      setReadyToSend(true);
+      return;
+    }
+
+    setConsignacionCompleta(true);
+    setValorConsignadoInput('');
+    setNuevoPendienteConsignacion(null);
+    setReadyToSend(false);
   };
 
   const getConsignacionMetadataPayload = (overrides?: {
-    cuentaId?: string;
-    otraCuenta?: OtraCuentaConsignacion;
-    fotos?: string[];
-  }) =>
-    serializeConsignacionMetadata({
-      cuentaId: overrides?.cuentaId ?? cuentaConsignacionId,
-      otraCuenta: (overrides?.cuentaId ?? cuentaConsignacionId) === 'otra'
-        ? (overrides?.otraCuenta ?? otraCuentaConsignacion)
-        : null,
-      fotos: (overrides?.fotos ?? fotosConsignacion).slice(1),
+    consignaciones?: ConsignacionSoporte[];
+  }) => {
+    const nextConsignaciones = overrides?.consignaciones ?? consignacionSoportes;
+    const consignacionesConFoto = nextConsignaciones.filter((consignacion) => Boolean(consignacion.fotoUrl));
+    const primeraConsignacion = consignacionesConFoto[0];
+
+    return serializeConsignacionMetadata({
+      cuentaId: primeraConsignacion?.cuentaId || undefined,
+      otraCuenta: primeraConsignacion?.cuentaId === 'otra' ? primeraConsignacion.otraCuenta || null : null,
+      fotos: consignacionesConFoto.map((consignacion) => consignacion.fotoUrl || '').filter(Boolean).slice(1),
+      consignaciones: nextConsignaciones,
     });
+  };
 
   useEffect(() => {
+    if (initGuardRef.current === fechaSeleccionada) {
+      return;
+    }
+    initGuardRef.current = fechaSeleccionada;
+
     const init = async () => {
       try {
         const {
@@ -171,6 +198,17 @@ export default function CuadreWizard() {
         setUser(userData);
         setPuntoVenta(puntoVentaData || null);
 
+        const fetchCuadreByFecha = async () => {
+          const { data, error } = await supabase
+            .from('cuadres_diarios')
+            .select('*')
+            .eq('punto_de_venta_id', userData.punto_de_venta_id)
+            .eq('fecha', fechaSeleccionada)
+            .maybeSingle();
+          if (error) throw error;
+          return data;
+        };
+
         const { data: cuadresAnteriores } = await supabase
           .from('cuadres_diarios')
           .select('consignacion_pendiente,fecha,consigna_hoy,url_foto_consignacion,valor_consignado,estado')
@@ -197,15 +235,9 @@ export default function CuadreWizard() {
 
         const pendienteArrastre = Number(ultimoCuadreCerrado?.consignacion_pendiente || 0);
 
-        // Consulta simplificada sin relaciones anidadas
-        const { data: existingCuadre, error: cuadreError } = await supabase
-          .from('cuadres_diarios')
-          .select('*')
-          .eq('punto_de_venta_id', userData.punto_de_venta_id)
-          .eq('fecha', fechaSeleccionada)
-          .single();
+        let existingCuadre = await fetchCuadreByFecha();
 
-        if (existingCuadre && !cuadreError) {
+        if (existingCuadre) {
           // El cuadre ya existe, lo cargamos
           // Cargamos las relaciones por separado
           const [gastosRes, turnerosRes] = await Promise.all([
@@ -230,6 +262,12 @@ export default function CuadreWizard() {
           setCuadre(normalized);
           setLocalCuadre(normalized);
           hydrateConsignacionState(normalized);
+          const consignaHoyExistente = (existingCuadre.consigna_hoy ?? true) === true;
+          const pendienteBaseActual =
+            consignaHoyExistente && (Number(existingCuadre.valor_consignado || 0) > 0)
+              ? pendienteArrastre
+              : Number((shouldApplyPendienteArrastre ? pendienteArrastre : existingCuadre.consignacion_pendiente) || 0);
+          hydrateConsignacionConfirmationState(normalized, pendienteBaseActual);
           if (shouldApplyPendienteArrastre) {
             await supabase
               .from('cuadres_diarios')
@@ -238,10 +276,6 @@ export default function CuadreWizard() {
           }
           if (cuadreCompleto.gastos_diarios) setGastos(cuadreCompleto.gastos_diarios);
           if (cuadreCompleto.pagos_turneros) setTurneros(cuadreCompleto.pagos_turneros);
-        } else if (cuadreError && cuadreError.code !== 'PGRST116') {
-          // Error que NO es "no hay filas"
-          console.error('Error al buscar cuadre:', cuadreError);
-          toast.error('Error al buscar el cuadre: ' + cuadreError.message);
         } else {
           // No hay cuadre, lo creamos
           const newCuadreData = {
@@ -252,7 +286,6 @@ export default function CuadreWizard() {
             recaudo: 0,
             venta_tarjetas: 0,
             venta_fiesta: 0,
-            venta_confiteria: 0,
             recibos: 0,
             venta_cajero_auto: 0,
             tar_inicial: 0,
@@ -270,35 +303,46 @@ export default function CuadreWizard() {
           };
           
           const doInsert = async (payload: Record<string, any>) => {
-            const { data, error } = await supabase.from('cuadres_diarios').insert(payload).select().single();
+            const { error } = await supabase.from('cuadres_diarios').insert(payload);
             if (error) throw error;
-            return data;
           };
 
-          let newCuadre: any;
           try {
-            newCuadre = await doInsert(newCuadreData as any);
+            await doInsert(newCuadreData as any);
           } catch (e: any) {
             const msg = String(e?.message || '');
             const match = msg.match(/Could not find the '([^']+)' column/i);
             const missingColumn = match?.[1];
-            if (e?.code === 'PGRST204' && missingColumn && missingColumn in (newCuadreData as any)) {
+            if (e?.code === '23505') {
+              // Ya existe (race condition / doble ejecución), continuamos y lo leemos abajo
+            } else if (e?.code === 'PGRST204' && missingColumn && missingColumn in (newCuadreData as any)) {
               const retryData = { ...(newCuadreData as any) };
               delete retryData[missingColumn];
-              newCuadre = await doInsert(retryData);
+              try {
+                await doInsert(retryData);
+              } catch (e2: any) {
+                if (e2?.code !== '23505') throw e2;
+              }
             } else {
               throw e;
             }
           }
 
-          const normalized = normalizeCuadreVentas(newCuadre);
+          const createdOrExisting = await fetchCuadreByFecha();
+          if (!createdOrExisting) {
+            throw new Error('No se pudo crear el cuadre');
+          }
+
+          const normalized = normalizeCuadreVentas(createdOrExisting);
           setCuadre(normalized);
           setLocalCuadre(normalized);
           hydrateConsignacionState(normalized);
+          hydrateConsignacionConfirmationState(normalized, pendienteArrastre);
         }
       } catch (error) {
         console.error('Error en la inicialización:', error);
-        toast.error('Ocurrió un error al inicializar el cuadre');
+        const err = error as SupabaseError;
+        toast.error(err?.message ? `Error al inicializar el cuadre: ${err.message}` : 'Ocurrió un error al inicializar el cuadre');
       } finally {
         setLoading(false);
       }
@@ -315,14 +359,12 @@ export default function CuadreWizard() {
       if (normalizedUpdates.venta_confiteria !== undefined && normalizedUpdates.recibos === undefined) {
         normalizedUpdates.recibos = normalizedUpdates.venta_confiteria;
       }
-      if (normalizedUpdates.recibos !== undefined && normalizedUpdates.venta_confiteria === undefined) {
-        normalizedUpdates.venta_confiteria = normalizedUpdates.recibos;
-      }
+      delete normalizedUpdates.venta_confiteria;
 
       // Lista de campos que realmente existen en la tabla cuadres_diarios (conocidos)
       const allowedFields = [
         'punto_de_venta_id', 'usuario_id', 'fecha', 'estado',
-        'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'venta_confiteria', 'recibos',
+        'recaudo', 'venta_tarjetas', 'venta_fiesta', 'venta_cajero_auto', 'recibos',
         'tar_inicial', 'tar_consumo', 'tar_fiestas', 'tar_malas', 'tar_final',
         'total_fisico', 'total_sistema', 'sobrante', 'faltante',
         'url_foto_consignacion', 'firma_cajero_url', 'nombre_administradora', 'cedula_administradora', 'observaciones',
@@ -396,7 +438,7 @@ export default function CuadreWizard() {
     context: 'draft',
     recaudo: localCuadre?.recaudo,
     venta_tarjetas: localCuadre?.venta_tarjetas,
-    consignacion_pendiente: localCuadre?.consignacion_pendiente,
+    consignacion_pendiente: pendienteArrastreActual,
     gastos,
     turneros,
   });
@@ -416,54 +458,65 @@ export default function CuadreWizard() {
     (localCuadre?.tar_malas || 0);
 
   const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
+  const consignacionesConFoto = consignacionSoportes.filter((consignacion) => Boolean(consignacion.fotoUrl));
   const fotoConsignacionPrincipal =
-    fotosConsignacion[0] ||
+    consignacionesConFoto[0]?.fotoUrl ||
     (typeof localCuadre?.url_foto_consignacion === 'string' ? localCuadre.url_foto_consignacion : null) ||
     cuadre?.url_foto_consignacion ||
     null;
-  const hayFotoConsignacion = Boolean(fotoConsignacionPrincipal);
-  const cuentaConsignacionSeleccionada = getCuentaConsignacionById(cuentaConsignacionId);
-  const usaOtraCuentaConsignacion = cuentaConsignacionId === 'otra';
-  const usaCuentaPredefinida = !usaOtraCuentaConsignacion;
+  const hayFotoConsignacion = consignacionesConFoto.length > 0;
   const bancosConsignacionDisponibles = Array.from(new Set(CUENTAS_CONSIGNACION.map((cuenta) => cuenta.banco)));
-  const tiposCuentaDisponibles = Array.from(
-    new Set(
-      CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === bancoConsignacion).map((cuenta) => cuenta.tipoCuenta)
-    )
-  );
-  const cuentasDisponibles = CUENTAS_CONSIGNACION.filter(
-    (cuenta) =>
-      cuenta.banco === bancoConsignacion &&
-      cuenta.tipoCuenta === tipoCuentaConsignacion
-  );
-  const cuentaPredefinidaSeleccionada = cuentasDisponibles.find(
-    (cuenta) => cuenta.numeroCuenta === numeroCuentaConsignacion
-  ) || cuentaConsignacionSeleccionada;
-  const otraCuentaCompleta = [
-    otraCuentaConsignacion.banco,
-    otraCuentaConsignacion.numeroCuenta,
-    otraCuentaConsignacion.tipoCuenta,
-    otraCuentaConsignacion.titular,
-  ].every((value) => value.trim());
-  const cuentaConsignacionValida = !consignaHoy || (usaOtraCuentaConsignacion ? otraCuentaCompleta : Boolean(cuentaConsignacionId));
+
+  const getTiposCuentaDisponibles = (banco: string) =>
+    Array.from(
+      new Set(CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === banco).map((cuenta) => cuenta.tipoCuenta))
+    );
+
+  const getCuentasDisponibles = (banco: string, tipoCuenta: string) =>
+    CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === banco && cuenta.tipoCuenta === tipoCuenta);
+
+  const getCuentaPredefinidaSeleccionada = (consignacion: ConsignacionSoporte) =>
+    getCuentaConsignacionById(consignacion.cuentaId) ||
+    getCuentasDisponibles(consignacion.banco || '', consignacion.tipoCuenta || '').find(
+      (cuenta) => cuenta.numeroCuenta === consignacion.numeroCuenta
+    ) ||
+    null;
+
+  const isOtraCuentaCompleta = (otraCuenta?: OtraCuentaConsignacion | null) =>
+    [
+      otraCuenta?.banco || '',
+      otraCuenta?.numeroCuenta || '',
+      otraCuenta?.tipoCuenta || '',
+      otraCuenta?.titular || '',
+    ].every((value) => value.trim());
+
+  const isConsignacionSoporteValida = (consignacion: ConsignacionSoporte) =>
+    consignacion.cuentaId === 'otra'
+      ? isOtraCuentaCompleta(consignacion.otraCuenta)
+      : Boolean(consignacion.cuentaId);
+
+  const cuentaConsignacionValida =
+    !consignaHoy ||
+    consignacionSoportes.length === 0 ||
+    consignacionSoportes.every(isConsignacionSoporteValida);
+  const valorConsignadoConfirmado = readyToSend ? Number(valorConsignadoInput) || 0 : 0;
+  const pendienteProximoCuadre = consignaHoy
+    ? readyToSend
+      ? Math.max(0, totalEfectivoConPendiente - valorConsignadoConfirmado)
+      : totalEfectivoConPendiente
+    : totalEfectivoConPendiente;
 
   const persistConsignacionMetadata = async (overrides?: {
-    cuentaId?: string;
-    otraCuenta?: OtraCuentaConsignacion | null;
-    fotos?: string[];
-    principal?: string | null;
+    consignaciones?: ConsignacionSoporte[];
     consignaHoy?: boolean;
     valorConsignado?: number;
   }) => {
-    const nextFotos = overrides?.fotos ?? fotosConsignacion;
-    const principal = overrides?.principal ?? nextFotos[0] ?? null;
-    const nextCuentaId = overrides?.cuentaId ?? cuentaConsignacionId;
-    const nextOtraCuenta =
-      overrides?.otraCuenta === null
-        ? null
-        : overrides?.otraCuenta ?? otraCuentaConsignacion;
+    const nextConsignaciones = overrides?.consignaciones ?? consignacionSoportes;
+    const consignacionesConFoto = nextConsignaciones.filter((consignacion) => Boolean(consignacion.fotoUrl));
+    const principal = consignacionesConFoto[0]?.fotoUrl ?? null;
+    const primeraConsignacion = consignacionesConFoto[0];
 
-    setFotosConsignacion(nextFotos);
+    setConsignacionSoportes(nextConsignaciones);
     setLocalCuadre((prev) => ({
       ...prev,
       url_foto_consignacion: principal,
@@ -473,77 +526,124 @@ export default function CuadreWizard() {
     await saveCuadre({
       url_foto_consignacion: principal,
       firma_cajero_url: serializeConsignacionMetadata({
-        cuentaId: nextCuentaId,
-        otraCuenta: nextCuentaId === 'otra' ? nextOtraCuenta : null,
-        fotos: nextFotos.slice(1),
+        cuentaId: primeraConsignacion?.cuentaId || undefined,
+        otraCuenta: primeraConsignacion?.cuentaId === 'otra' ? primeraConsignacion.otraCuenta || null : null,
+        fotos: consignacionesConFoto.map((consignacion) => consignacion.fotoUrl || '').filter(Boolean).slice(1),
+        consignaciones: nextConsignaciones,
       }),
       ...(overrides?.consignaHoy !== undefined ? { consigna_hoy: overrides.consignaHoy } : {}),
       ...(overrides?.valorConsignado !== undefined ? { valor_consignado: overrides.valorConsignado } : {}),
     });
   };
 
-  const handleCuentaConsignacionChange = async (nextCuentaId: string) => {
-    setCuentaConsignacionId(nextCuentaId);
-    if (nextCuentaId !== 'otra') {
-      await persistConsignacionMetadata({ cuentaId: nextCuentaId, otraCuenta: null });
-      return;
-    }
-    await persistConsignacionMetadata({ cuentaId: nextCuentaId, otraCuenta: otraCuentaConsignacion });
-  };
-
-  const handleCuentaRegistradaMode = async () => {
-    setCuentaConsignacionId('');
-    setBancoConsignacion('');
-    setTipoCuentaConsignacion('');
-    setNumeroCuentaConsignacion('');
-    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
-  };
-
-  const handleOtraCuentaMode = async () => {
-    setCuentaConsignacionId('otra');
-    setBancoConsignacion('');
-    setTipoCuentaConsignacion('');
-    setNumeroCuentaConsignacion('');
-    await persistConsignacionMetadata({ cuentaId: 'otra', otraCuenta: otraCuentaConsignacion });
-  };
-
-  const handleBancoConsignacionChange = async (nextBanco: string) => {
-    setBancoConsignacion(nextBanco);
-    setTipoCuentaConsignacion('');
-    setNumeroCuentaConsignacion('');
-    setCuentaConsignacionId('');
-    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
-  };
-
-  const handleTipoCuentaConsignacionChange = async (nextTipoCuenta: string) => {
-    setTipoCuentaConsignacion(nextTipoCuenta);
-    setNumeroCuentaConsignacion('');
-    setCuentaConsignacionId('');
-    await persistConsignacionMetadata({ cuentaId: '', otraCuenta: null });
-  };
-
-  const handleNumeroCuentaConsignacionChange = async (nextNumeroCuenta: string) => {
-    setNumeroCuentaConsignacion(nextNumeroCuenta);
-    const cuentaSeleccionada = CUENTAS_CONSIGNACION.find(
-      (cuenta) =>
-        cuenta.banco === bancoConsignacion &&
-        cuenta.tipoCuenta === tipoCuentaConsignacion &&
-        cuenta.numeroCuenta === nextNumeroCuenta
+  const updateConsignacionLocal = (consignacionId: string, updater: (consignacion: ConsignacionSoporte) => ConsignacionSoporte) =>
+    consignacionSoportes.map((consignacion) =>
+      consignacion.id === consignacionId ? updater(consignacion) : consignacion
     );
-    setCuentaConsignacionId(cuentaSeleccionada?.id || '');
-    await persistConsignacionMetadata({ cuentaId: cuentaSeleccionada?.id || '', otraCuenta: null });
+
+  const handleAddConsignacion = () => {
+    setConsignacionSoportes((prev) => [...prev, createEmptyConsignacion()]);
   };
 
-  const handleOtraCuentaFieldChange = (field: keyof OtraCuentaConsignacion, value: string) => {
-    setOtraCuentaConsignacion((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const saveOtraCuentaConsignacion = async () => {
-    if (!usaOtraCuentaConsignacion) return;
+  const handleDeleteConsignacion = async (consignacionId: string) => {
+    const nextConsignaciones = consignacionSoportes.filter((consignacion) => consignacion.id !== consignacionId);
     await persistConsignacionMetadata({
-      cuentaId: 'otra',
-      otraCuenta: otraCuentaConsignacion,
+      consignaciones: nextConsignaciones,
+      valorConsignado: nextConsignaciones.some((consignacion) => consignacion.fotoUrl) ? undefined : 0,
     });
+
+    if (!nextConsignaciones.some((consignacion) => consignacion.fotoUrl)) {
+      setReadyToSend(false);
+      setNuevoPendienteConsignacion(null);
+      setValorConsignadoInput('');
+    }
+  };
+
+  const handleConsignacionModeChange = async (consignacionId: string, mode: 'registrada' | 'otra') => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
+      ...consignacion,
+      cuentaId: mode === 'otra' ? 'otra' : '',
+      otraCuenta: mode === 'otra' ? consignacion.otraCuenta || { ...emptyOtraCuenta } : null,
+      banco: '',
+      tipoCuenta: '',
+      numeroCuenta: '',
+    }));
+    setConsignacionSoportes(nextConsignaciones);
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
+  };
+
+  const handleBancoConsignacionChange = async (consignacionId: string, nextBanco: string) => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
+      ...consignacion,
+      banco: nextBanco,
+      tipoCuenta: '',
+      numeroCuenta: '',
+      cuentaId: '',
+      otraCuenta: null,
+    }));
+    setConsignacionSoportes(nextConsignaciones);
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
+  };
+
+  const handleTipoCuentaConsignacionChange = async (consignacionId: string, nextTipoCuenta: string) => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
+      ...consignacion,
+      tipoCuenta: nextTipoCuenta,
+      numeroCuenta: '',
+      cuentaId: '',
+      otraCuenta: null,
+    }));
+    setConsignacionSoportes(nextConsignaciones);
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
+  };
+
+  const handleNumeroCuentaConsignacionChange = async (consignacionId: string, nextNumeroCuenta: string) => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => {
+      const cuentaSeleccionada = CUENTAS_CONSIGNACION.find(
+        (cuenta) =>
+          cuenta.banco === consignacion.banco &&
+          cuenta.tipoCuenta === consignacion.tipoCuenta &&
+          cuenta.numeroCuenta === nextNumeroCuenta
+      );
+      return {
+        ...consignacion,
+        numeroCuenta: nextNumeroCuenta,
+        cuentaId: cuentaSeleccionada?.id || '',
+        otraCuenta: null,
+      };
+    });
+    setConsignacionSoportes(nextConsignaciones);
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
+  };
+
+  const handleOtraCuentaFieldChange = (consignacionId: string, field: keyof OtraCuentaConsignacion, value: string) => {
+    setConsignacionSoportes((prev) =>
+      prev.map((consignacion) =>
+        consignacion.id === consignacionId
+          ? {
+              ...consignacion,
+              cuentaId: 'otra',
+              otraCuenta: {
+                ...(consignacion.otraCuenta || emptyOtraCuenta),
+                [field]: value,
+              },
+            }
+          : consignacion
+      )
+    );
+  };
+
+  const saveOtraCuentaConsignacion = async (consignacionId: string) => {
+    const nextConsignaciones = consignacionSoportes.map((consignacion) =>
+      consignacion.id === consignacionId
+        ? {
+            ...consignacion,
+            cuentaId: 'otra',
+            otraCuenta: consignacion.otraCuenta || { ...emptyOtraCuenta },
+          }
+        : consignacion
+    );
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
   };
 
   const nextStep = async () => {
@@ -559,20 +659,13 @@ export default function CuadreWizard() {
   const enviarCuadre = async () => {
     if (!cuadre?.id) return;
     if (!cuentaConsignacionValida) {
-      toast.error('Selecciona la cuenta de consignación y completa los datos si eliges Otra');
+      toast.error('Completa la cuenta correspondiente en cada consignación registrada');
       return;
     }
     setSaving(true);
     try {
       const consignaHoy = (localCuadre?.consigna_hoy ?? true) === true;
       const nuevoEstado = consignaHoy ? (hayFotoConsignacion ? 'enviado' : 'pendiente') : 'enviado';
-
-      const valorConsignado = consignaHoy && readyToSend ? Number(valorConsignadoInput) || 0 : 0;
-      const pendienteCalculado = consignaHoy
-        ? readyToSend
-          ? Math.max(0, totalEfectivoConPendiente - valorConsignado)
-          : totalEfectivoConPendiente
-        : totalEfectivoConPendiente;
       
       const updates = {
         ...localCuadre,
@@ -586,12 +679,12 @@ export default function CuadreWizard() {
         observacion_superadmin: '',
         firma_cajero_url: consignaHoy
           ? getConsignacionMetadataPayload()
-          : serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [] }),
+          : serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [], consignaciones: [] }),
         ...(consignaHoy
           ? {
               url_foto_consignacion: fotoConsignacionPrincipal,
-              valor_consignado: valorConsignado,
-              consignacion_pendiente: pendienteCalculado,
+              valor_consignado: valorConsignadoConfirmado,
+              consignacion_pendiente: pendienteProximoCuadre,
             }
           : {
               url_foto_consignacion: null,
@@ -617,30 +710,53 @@ export default function CuadreWizard() {
     }
   };
 
-  const handleFotoConsignacionUpload = async (url: string) => {
-    const nextFotos = Array.from(new Set([...fotosConsignacion, url]));
+  const handleFotoConsignacionUpload = async (consignacionId: string, url: string) => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
+      ...consignacion,
+      fotoUrl: url,
+    }));
     await persistConsignacionMetadata({
-      fotos: nextFotos,
-      principal: nextFotos[0],
+      consignaciones: nextConsignaciones,
       consignaHoy: true,
     });
-    const valorEsperado = totalEfectivoConPendiente;
-    if (valorConsignadoInput === '') {
-      setValorConsignadoInput(valorEsperado);
-      setConsignacionCompleta(true);
-      setShowConsignacionModal(true);
-    }
   };
 
-  const handleRemoveFotoConsignacion = async (fotoUrl: string) => {
-    const nextFotos = fotosConsignacion.filter((foto) => foto !== fotoUrl);
+  const handleValorConsignacionSoporteChange = (consignacionId: string, value: number) => {
+    setConsignacionSoportes((prev) =>
+      prev.map((consignacion) =>
+        consignacion.id === consignacionId
+          ? {
+              ...consignacion,
+              valor: value,
+            }
+          : consignacion
+      )
+    );
+  };
+
+  const saveValorConsignacionSoporte = async (consignacionId: string) => {
+    const nextConsignaciones = consignacionSoportes.map((consignacion) =>
+      consignacion.id === consignacionId
+        ? {
+            ...consignacion,
+            valor: Number(consignacion.valor) || 0,
+          }
+        : consignacion
+    );
+    await persistConsignacionMetadata({ consignaciones: nextConsignaciones });
+  };
+
+  const handleRemoveFotoConsignacion = async (consignacionId: string) => {
+    const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
+      ...consignacion,
+      fotoUrl: '',
+    }));
     await persistConsignacionMetadata({
-      fotos: nextFotos,
-      principal: nextFotos[0] ?? null,
-      valorConsignado: nextFotos.length === 0 ? 0 : undefined,
+      consignaciones: nextConsignaciones,
+      valorConsignado: nextConsignaciones.some((consignacion) => consignacion.fotoUrl) ? undefined : 0,
     });
 
-    if (nextFotos.length === 0) {
+    if (!nextConsignaciones.some((consignacion) => consignacion.fotoUrl)) {
       setReadyToSend(false);
       setNuevoPendienteConsignacion(null);
       setValorConsignadoInput('');
@@ -648,9 +764,20 @@ export default function CuadreWizard() {
   };
 
   const handleConfirmConsignacion = async () => {
-    const valorConsignado = Number(valorConsignadoInput) || 0;
+    const valorConsignado = consignacionCompleta
+      ? totalEfectivoConPendiente
+      : Number(valorConsignadoInput) || 0;
     const valorEsperado = totalEfectivoConPendiente;
+    if (valorConsignado <= 0) {
+      toast.error('Ingresa un valor consignado mayor a 0');
+      return;
+    }
+    if (valorConsignado > valorEsperado) {
+      toast.error('El valor consignado no puede ser mayor al total general a consignar');
+      return;
+    }
     const nuevoPendiente = Math.max(0, valorEsperado - valorConsignado);
+    setValorConsignadoInput(valorConsignado);
     setNuevoPendienteConsignacion(nuevoPendiente);
     setShowConsignacionModal(false);
     setReadyToSend(true);
@@ -865,8 +992,12 @@ export default function CuadreWizard() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valor Consignación Pendiente (días anteriores)</label>
                 <input
                   type="number"
-                  value={localCuadre?.consignacion_pendiente === 0 ? '' : localCuadre?.consignacion_pendiente}
-                  onChange={(e) => setLocalCuadre({ ...localCuadre, consignacion_pendiente: Number(e.target.value) || 0 })}
+                  value={pendienteArrastreActual === 0 ? '' : pendienteArrastreActual}
+                  onChange={(e) => {
+                    const value = Number(e.target.value) || 0;
+                    setPendienteArrastreActual(value);
+                    setLocalCuadre({ ...localCuadre, consignacion_pendiente: value });
+                  }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -1049,9 +1180,8 @@ export default function CuadreWizard() {
                         setLocalCuadre((prev) => ({ ...prev, consigna_hoy: true }));
                         setReadyToSend(false);
                         setNuevoPendienteConsignacion(null);
-                        if (!hayFotoConsignacion) {
-                          setValorConsignadoInput('');
-                        }
+                        setConsignacionCompleta(true);
+                        setValorConsignadoInput('');
                         await saveCuadre({ consigna_hoy: true });
                       }}
                       className="w-4 h-4"
@@ -1065,9 +1195,7 @@ export default function CuadreWizard() {
                       checked={!consignaHoy}
                       onChange={async () => {
                         setLocalCuadre((prev) => ({ ...prev, consigna_hoy: false }));
-                        setCuentaConsignacionId('');
-                        setOtraCuentaConsignacion(emptyOtraCuenta);
-                        setFotosConsignacion([]);
+                        setConsignacionSoportes([]);
                         setReadyToSend(true);
                         setShowConsignacionModal(false);
                         setValorConsignadoInput(0);
@@ -1075,7 +1203,7 @@ export default function CuadreWizard() {
                         await saveCuadre({
                           consigna_hoy: false,
                           url_foto_consignacion: null,
-                          firma_cajero_url: serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [] }),
+                          firma_cajero_url: serializeConsignacionMetadata({ cuentaId: '', otraCuenta: null, fotos: [], consignaciones: [] }),
                           valor_consignado: 0,
                         });
                       }}
@@ -1116,203 +1244,283 @@ export default function CuadreWizard() {
               
               {consignaHoy && (
                 <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-medium mb-3">Cuenta de Consignación</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-medium text-blue-900">Definir Consignación del Día</h3>
+                        <p className="text-sm text-blue-800">
+                          Primero confirma si la consignación total del día será completa o parcial. Después puedes registrar los soportes en una o varias cuentas.
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={handleCuentaRegistradaMode}
-                        className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                          usaCuentaPredefinida ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
-                        }`}
+                        onClick={() => {
+                          setShowConsignacionModal(true);
+                          if (valorConsignadoInput === '') {
+                            setValorConsignadoInput(totalEfectivoConPendiente);
+                            setConsignacionCompleta(true);
+                          }
+                        }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                       >
-                        <p className="font-semibold">Cuenta registrada</p>
-                        <p className="text-sm text-gray-600">Selecciona banco, tipo y número disponible.</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleOtraCuentaMode}
-                        className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                          usaOtraCuentaConsignacion ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
-                        }`}
-                      >
-                        <p className="font-semibold">Otra cuenta</p>
-                        <p className="text-sm text-gray-600">Escribe banco, número de cuenta, tipo y titular.</p>
+                        {readyToSend ? 'Editar Valor Consignado' : 'Definir Completa o Parcial'}
                       </button>
                     </div>
                   </div>
-
-                  {usaCuentaPredefinida && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
-                        <select
-                          value={bancoConsignacion}
-                          onChange={(e) => handleBancoConsignacionChange(e.target.value)}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                        >
-                          <option value="">Selecciona un banco</option>
-                          {bancosConsignacionDisponibles.map((banco) => (
-                            <option key={banco} value={banco}>
-                              {banco}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
-                        <select
-                          value={tipoCuentaConsignacion}
-                          onChange={(e) => handleTipoCuentaConsignacionChange(e.target.value)}
-                          disabled={!bancoConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
-                        >
-                          <option value="">Selecciona tipo de cuenta</option>
-                          {tiposCuentaDisponibles.map((tipoCuenta) => (
-                            <option key={tipoCuenta} value={tipoCuenta}>
-                              {tipoCuenta}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
-                        <select
-                          value={numeroCuentaConsignacion}
-                          onChange={(e) => handleNumeroCuentaConsignacionChange(e.target.value)}
-                          disabled={!tipoCuentaConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
-                        >
-                          <option value="">Selecciona el número de cuenta</option>
-                          {cuentasDisponibles.map((cuenta) => (
-                            <option key={cuenta.id} value={cuenta.numeroCuenta}>
-                              {cuenta.numeroCuenta}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
-                        <input
-                          type="text"
-                          value={cuentaPredefinidaSeleccionada?.titular || ''}
-                          readOnly
-                          placeholder="Se completa automáticamente"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {usaOtraCuentaConsignacion && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
-                        <input
-                          type="text"
-                          value={otraCuentaConsignacion.banco}
-                          onChange={(e) => handleOtraCuentaFieldChange('banco', e.target.value)}
-                          onBlur={saveOtraCuentaConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
-                        <input
-                          type="text"
-                          value={otraCuentaConsignacion.numeroCuenta}
-                          onChange={(e) => handleOtraCuentaFieldChange('numeroCuenta', e.target.value)}
-                          onBlur={saveOtraCuentaConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
-                        <input
-                          type="text"
-                          value={otraCuentaConsignacion.tipoCuenta}
-                          onChange={(e) => handleOtraCuentaFieldChange('tipoCuenta', e.target.value)}
-                          onBlur={saveOtraCuentaConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
-                        <input
-                          type="text"
-                          value={otraCuentaConsignacion.titular}
-                          onChange={(e) => handleOtraCuentaFieldChange('titular', e.target.value)}
-                          onBlur={saveOtraCuentaConsignacion}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {!cuentaConsignacionValida && (
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                      Debes completar la cuenta de consignación. Si eliges <strong>Cuenta registrada</strong>, selecciona banco, tipo y número. Si eliges <strong>Otra</strong>, completa todos los datos.
-                    </div>
-                  )}
-
-                  {cuentaPredefinidaSeleccionada && usaCuentaPredefinida && (
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <p className="text-sm text-gray-600">Cuenta seleccionada</p>
-                      <p className="font-semibold text-gray-900">
-                        {cuentaPredefinidaSeleccionada.banco} - {cuentaPredefinidaSeleccionada.numeroCuenta}
-                      </p>
-                      <p className="text-sm text-gray-700">
-                        {cuentaPredefinidaSeleccionada.tipoCuenta} - {cuentaPredefinidaSeleccionada.titular}
-                      </p>
-                    </div>
-                  )}
 
                   <div>
                     <div className="flex items-center justify-between gap-3 mb-3">
-                      <h3 className="text-lg font-medium">Fotos de Consignación</h3>
-                      {fotosConsignacion.length > 0 && (
-                        <span className="text-sm text-gray-500">{fotosConsignacion.length} soporte(s)</span>
-                      )}
+                      <div>
+                        <h3 className="text-lg font-medium">Consignaciones Realizadas</h3>
+                        <p className="text-sm text-gray-600">
+                          Cada soporte puede ir a una cuenta distinta.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddConsignacion}
+                        disabled={!readyToSend}
+                        className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        + Agregar Consignación
+                      </button>
                     </div>
 
-                    {fotosConsignacion.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        {fotosConsignacion.map((fotoUrl, index) => (
-                          <div key={fotoUrl} className="rounded-lg border border-gray-200 p-3 bg-gray-50">
-                            <p className="text-xs font-medium text-gray-500 mb-2">
-                              {index === 0 ? 'Foto principal' : `Foto ${index + 1}`}
-                            </p>
-                            <UploadFoto
-                              bucket="soportes"
-                              currentUrl={fotoUrl}
-                              onUpload={handleFotoConsignacionUpload}
-                              onRemove={() => handleRemoveFotoConsignacion(fotoUrl)}
-                            />
-                          </div>
-                        ))}
+                    {!readyToSend && (
+                      <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50 p-4 text-sm text-blue-800 mb-4">
+                        Primero define si la consignación del día es completa o parcial. Ese valor total queda fijo y las fotos solo sirven como soporte.
                       </div>
                     )}
 
-                    <UploadFoto
-                      bucket="soportes"
-                      onUpload={handleFotoConsignacionUpload}
-                    />
-                    <p className="text-xs text-gray-500 mt-2">
-                      Puedes subir una o varias fotos si la consignación se hizo en varias transacciones.
-                    </p>
-                  </div>
+                    {readyToSend && consignacionSoportes.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                        Agrega una consignación por cada transacción realizada. Si todavía no tienes soporte, puedes enviar el cuadre como pendiente y cargarlo después.
+                      </div>
+                    )}
 
-                  <button
-                    onClick={() => {
-                      setShowConsignacionModal(true);
-                      if (valorConsignadoInput === '') {
-                        setValorConsignadoInput(totalEfectivoConPendiente);
-                      }
-                    }}
-                    className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    {hayFotoConsignacion ? 'Editar Confirmación de Consignación' : 'Confirmar Consignación'}
-                  </button>
+                    <div className="space-y-4">
+                      {consignacionSoportes.map((consignacion, index) => {
+                        const usaOtraCuentaConsignacion = consignacion.cuentaId === 'otra';
+                        const usaCuentaPredefinida = !usaOtraCuentaConsignacion;
+                        const tiposCuentaDisponibles = getTiposCuentaDisponibles(consignacion.banco || '');
+                        const cuentasDisponibles = getCuentasDisponibles(consignacion.banco || '', consignacion.tipoCuenta || '');
+                        const cuentaPredefinidaSeleccionada = getCuentaPredefinidaSeleccionada(consignacion);
+
+                        return (
+                          <div key={consignacion.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                              <div>
+                                <p className="font-semibold text-gray-900">Consignación {index + 1}</p>
+                                <p className="text-sm text-gray-600">
+                                  {consignacion.fotoUrl ? 'Soporte cargado' : 'Pendiente por cargar soporte'}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteConsignacion(consignacion.id)}
+                                className="text-sm text-red-600 hover:text-red-700"
+                              >
+                                Eliminar consignación
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                              <button
+                                type="button"
+                                onClick={() => handleConsignacionModeChange(consignacion.id, 'registrada')}
+                                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                                  usaCuentaPredefinida ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
+                                }`}
+                              >
+                                <p className="font-semibold">Cuenta registrada</p>
+                                <p className="text-sm text-gray-600">Selecciona banco, tipo y número disponible.</p>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleConsignacionModeChange(consignacion.id, 'otra')}
+                                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                                  usaOtraCuentaConsignacion ? 'border-primary bg-primary/5 text-primary' : 'border-gray-200 hover:border-primary/50 text-gray-700'
+                                }`}
+                              >
+                                <p className="font-semibold">Otra cuenta</p>
+                                <p className="text-sm text-gray-600">Escribe banco, número de cuenta, tipo y titular.</p>
+                              </button>
+                            </div>
+
+                            {usaCuentaPredefinida && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                                  <select
+                                    value={consignacion.banco || ''}
+                                    onChange={(e) => handleBancoConsignacionChange(consignacion.id, e.target.value)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  >
+                                    <option value="">Selecciona un banco</option>
+                                    {bancosConsignacionDisponibles.map((banco) => (
+                                      <option key={banco} value={banco}>
+                                        {banco}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
+                                  <select
+                                    value={consignacion.tipoCuenta || ''}
+                                    onChange={(e) => handleTipoCuentaConsignacionChange(consignacion.id, e.target.value)}
+                                    disabled={!consignacion.banco}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
+                                  >
+                                    <option value="">Selecciona tipo de cuenta</option>
+                                    {tiposCuentaDisponibles.map((tipoCuenta) => (
+                                      <option key={tipoCuenta} value={tipoCuenta}>
+                                        {tipoCuenta}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
+                                  <select
+                                    value={consignacion.numeroCuenta || ''}
+                                    onChange={(e) => handleNumeroCuentaConsignacionChange(consignacion.id, e.target.value)}
+                                    disabled={!consignacion.tipoCuenta}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
+                                  >
+                                    <option value="">Selecciona el número de cuenta</option>
+                                    {cuentasDisponibles.map((cuenta) => (
+                                      <option key={cuenta.id} value={cuenta.numeroCuenta}>
+                                        {cuenta.numeroCuenta}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
+                                  <input
+                                    type="text"
+                                    value={cuentaPredefinidaSeleccionada?.titular || ''}
+                                    readOnly
+                                    placeholder="Se completa automáticamente"
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {usaOtraCuentaConsignacion && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                                  <input
+                                    type="text"
+                                    value={consignacion.otraCuenta?.banco || ''}
+                                    onChange={(e) => handleOtraCuentaFieldChange(consignacion.id, 'banco', e.target.value)}
+                                    onBlur={() => saveOtraCuentaConsignacion(consignacion.id)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
+                                  <input
+                                    type="text"
+                                    value={consignacion.otraCuenta?.numeroCuenta || ''}
+                                    onChange={(e) => handleOtraCuentaFieldChange(consignacion.id, 'numeroCuenta', e.target.value)}
+                                    onBlur={() => saveOtraCuentaConsignacion(consignacion.id)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
+                                  <input
+                                    type="text"
+                                    value={consignacion.otraCuenta?.tipoCuenta || ''}
+                                    onChange={(e) => handleOtraCuentaFieldChange(consignacion.id, 'tipoCuenta', e.target.value)}
+                                    onBlur={() => saveOtraCuentaConsignacion(consignacion.id)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Titular</label>
+                                  <input
+                                    type="text"
+                                    value={consignacion.otraCuenta?.titular || ''}
+                                    onChange={(e) => handleOtraCuentaFieldChange(consignacion.id, 'titular', e.target.value)}
+                                    onBlur={() => saveOtraCuentaConsignacion(consignacion.id)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {cuentaPredefinidaSeleccionada && usaCuentaPredefinida && (
+                              <div className="mb-4 p-4 bg-white rounded-lg border border-gray-200">
+                                <p className="text-sm text-gray-600">Cuenta seleccionada</p>
+                                <p className="font-semibold text-gray-900">
+                                  {cuentaPredefinidaSeleccionada.banco} - {cuentaPredefinidaSeleccionada.numeroCuenta}
+                                </p>
+                                <p className="text-sm text-gray-700">
+                                  {cuentaPredefinidaSeleccionada.tipoCuenta} - {cuentaPredefinidaSeleccionada.titular}
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Valor consignado en esta cuenta
+                                </label>
+                                <input
+                                  type="number"
+                                  value={consignacion.valor || ''}
+                                  onChange={(e) =>
+                                    handleValorConsignacionSoporteChange(
+                                      consignacion.id,
+                                      Number(e.target.value) || 0
+                                    )
+                                  }
+                                  onBlur={() => saveValorConsignacionSoporte(consignacion.id)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                                  placeholder="Solo informativo"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Este valor no cambia el total confirmado del cuadre.
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Foto de consignación</label>
+                                <UploadFoto
+                                  bucket="soportes"
+                                  currentUrl={consignacion.fotoUrl}
+                                  onUpload={(url) => handleFotoConsignacionUpload(consignacion.id, url)}
+                                  onRemove={() => handleRemoveFotoConsignacion(consignacion.id)}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Adjunta el comprobante correspondiente a esta consignación.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {!cuentaConsignacionValida && consignacionSoportes.length > 0 && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 mt-4">
+                        Debes completar la cuenta de cada consignación registrada. Si eliges <strong>Cuenta registrada</strong>, selecciona banco, tipo y número. Si eliges <strong>Otra</strong>, completa todos los datos.
+                      </div>
+                    )}
+
+                    <p className="text-xs text-gray-500 mt-3">
+                      Usa una tarjeta por cada consignación hecha. Así cada foto queda amarrada a su propia cuenta.
+                    </p>
+                    {consignacionSoportes.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Suma informativa registrada por soportes: {formatCOP(consignacionSoportes.reduce((sum, consignacion) => sum + (Number(consignacion.valor) || 0), 0))}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
               
@@ -1347,16 +1555,20 @@ export default function CuadreWizard() {
 
               {(readyToSend || valorConsignadoInput !== '') && (
                 <div className="p-4 bg-white rounded-lg border border-gray-200">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600">Tipo de consignación</span>
+                    <span className="font-semibold text-gray-900">
+                      {consignacionCompleta ? 'Completa' : 'Parcial'}
+                    </span>
+                  </div>
                   <div className="flex justify-between font-semibold text-lg">
                     <span className="text-gray-700">Valor Consignado</span>
-                    <span className="text-gray-900">{formatCOP(Number(valorConsignadoInput) || 0)}</span>
+                    <span className="text-gray-900">{formatCOP(valorConsignadoConfirmado)}</span>
                   </div>
                   <div className="flex justify-between font-semibold text-lg mt-2">
                     <span className="text-orange-700">Pendiente Próximo Cuadre</span>
                     <span className="text-orange-800">
-                      {formatCOP(
-                        nuevoPendienteConsignacion ?? Math.max(0, totalEfectivoConPendiente - (Number(valorConsignadoInput) || 0))
-                      )}
+                      {formatCOP(nuevoPendienteConsignacion ?? pendienteProximoCuadre)}
                     </span>
                   </div>
                 </div>
@@ -1384,7 +1596,7 @@ export default function CuadreWizard() {
                   !localCuadre?.nombre_administradora ||
                   !localCuadre?.cedula_administradora ||
                   !cuentaConsignacionValida ||
-                  (consignaHoy && hayFotoConsignacion && !readyToSend)
+                  (consignaHoy && !readyToSend)
                 }
                 className={`w-full py-3 font-medium rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 ${
                   consignaHoy ? (hayFotoConsignacion ? 'bg-success text-white' : 'bg-warning text-white') : 'bg-success text-white'
@@ -1576,7 +1788,10 @@ export default function CuadreWizard() {
                   id="consignacionParcial"
                   name="consignacion"
                   checked={!consignacionCompleta}
-                  onChange={() => setConsignacionCompleta(false)}
+                  onChange={() => {
+                    setConsignacionCompleta(false);
+                    setValorConsignadoInput('');
+                  }}
                   className="w-4 h-4"
                 />
                 <label htmlFor="consignacionParcial" className="text-sm font-medium text-gray-700">Consignación Parcial</label>
@@ -1587,7 +1802,8 @@ export default function CuadreWizard() {
                   type="number"
                   value={valorConsignadoInput}
                   onChange={(e) => setValorConsignadoInput(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                  readOnly={consignacionCompleta}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg read-only:bg-gray-100 read-only:text-gray-700"
                 />
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
@@ -1598,7 +1814,13 @@ export default function CuadreWizard() {
                 <div className="flex justify-between text-sm mt-2">
                   <span className="text-orange-700 font-medium">Queda Pendiente</span>
                   <span className="font-semibold text-orange-800">
-                    {formatCOP(Math.max(0, totalEfectivoConPendiente - (Number(valorConsignadoInput) || 0)))}
+                    {formatCOP(
+                      Math.max(
+                        0,
+                        totalEfectivoConPendiente -
+                          (consignacionCompleta ? totalEfectivoConPendiente : Number(valorConsignadoInput) || 0)
+                      )
+                    )}
                   </span>
                 </div>
               </div>

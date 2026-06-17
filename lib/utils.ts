@@ -131,11 +131,23 @@ export type OtraCuentaConsignacion = {
   titular: string;
 };
 
+export type ConsignacionSoporte = {
+  id: string;
+  fotoUrl?: string;
+  valor?: number;
+  cuentaId?: string;
+  otraCuenta?: OtraCuentaConsignacion | null;
+  banco?: string;
+  tipoCuenta?: string;
+  numeroCuenta?: string;
+};
+
 export type ConsignacionMetadata = {
-  version: 1;
+  version: 1 | 2;
   cuentaId?: string;
   otraCuenta?: OtraCuentaConsignacion | null;
   fotos?: string[];
+  consignaciones?: ConsignacionSoporte[];
 };
 
 export const CUENTAS_CONSIGNACION: CuentaConsignacionPredefinida[] = [
@@ -162,7 +174,7 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
     const parsed = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object') return null;
     return {
-      version: 1,
+      version: parsed.version === 2 ? 2 : 1,
       cuentaId: typeof parsed.cuentaId === 'string' ? parsed.cuentaId : undefined,
       otraCuenta: parsed.otraCuenta && typeof parsed.otraCuenta === 'object'
         ? {
@@ -175,6 +187,33 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
       fotos: Array.isArray(parsed.fotos)
         ? parsed.fotos.map((item: unknown) => String(item || '')).filter(Boolean)
         : [],
+      consignaciones: Array.isArray(parsed.consignaciones)
+        ? parsed.consignaciones
+            .map((item: unknown, index: number) => {
+              if (!item || typeof item !== 'object') return null;
+              const soporte = item as Record<string, unknown>;
+              const otraCuenta =
+                soporte.otraCuenta && typeof soporte.otraCuenta === 'object'
+                  ? {
+                      banco: String((soporte.otraCuenta as Record<string, unknown>).banco || ''),
+                      numeroCuenta: String((soporte.otraCuenta as Record<string, unknown>).numeroCuenta || ''),
+                      tipoCuenta: String((soporte.otraCuenta as Record<string, unknown>).tipoCuenta || ''),
+                      titular: String((soporte.otraCuenta as Record<string, unknown>).titular || ''),
+                    }
+                  : null;
+              return {
+                id: String(soporte.id || `consignacion-${index + 1}`),
+                fotoUrl: String(soporte.fotoUrl || ''),
+                valor: Number(soporte.valor) || 0,
+                cuentaId: typeof soporte.cuentaId === 'string' ? soporte.cuentaId : undefined,
+                otraCuenta,
+                banco: String(soporte.banco || ''),
+                tipoCuenta: String(soporte.tipoCuenta || ''),
+                numeroCuenta: String(soporte.numeroCuenta || ''),
+              } satisfies ConsignacionSoporte;
+            })
+            .filter((item): item is ConsignacionSoporte => Boolean(item))
+        : [],
     };
   } catch {
     return null;
@@ -185,12 +224,24 @@ export const serializeConsignacionMetadata = (input: {
   cuentaId?: string;
   otraCuenta?: OtraCuentaConsignacion | null;
   fotos?: string[];
+  consignaciones?: ConsignacionSoporte[];
 }) => {
+  const consignaciones = (input.consignaciones || []).map((consignacion, index) => ({
+    id: consignacion.id || `consignacion-${index + 1}`,
+    fotoUrl: consignacion.fotoUrl || '',
+    valor: Number(consignacion.valor) || 0,
+    cuentaId: consignacion.cuentaId || undefined,
+    otraCuenta: consignacion.cuentaId === 'otra' ? (consignacion.otraCuenta || null) : null,
+    banco: consignacion.banco || '',
+    tipoCuenta: consignacion.tipoCuenta || '',
+    numeroCuenta: consignacion.numeroCuenta || '',
+  }));
   const payload: ConsignacionMetadata = {
-    version: 1,
+    version: consignaciones.length > 0 ? 2 : 1,
     cuentaId: input.cuentaId || undefined,
     otraCuenta: input.otraCuenta || null,
     fotos: (input.fotos || []).filter(Boolean),
+    consignaciones,
   };
   return JSON.stringify(payload);
 };
@@ -198,11 +249,76 @@ export const serializeConsignacionMetadata = (input: {
 export const getCuentaConsignacionById = (cuentaId: string | null | undefined) =>
   CUENTAS_CONSIGNACION.find((cuenta) => cuenta.id === cuentaId);
 
-export const getConsignacionFotos = (input: {
+export const getConsignacionSoportes = (input: {
   url_foto_consignacion?: string | null;
   firma_cajero_url?: string | null;
 }) => {
   const metadata = parseConsignacionMetadata(input.firma_cajero_url);
+  const soportesMetadata = (metadata?.consignaciones || []).map((consignacion, index) => ({
+    id: consignacion.id || `consignacion-${index + 1}`,
+    fotoUrl: consignacion.fotoUrl || '',
+    valor: Number(consignacion.valor) || 0,
+    cuentaId: consignacion.cuentaId || undefined,
+    otraCuenta: consignacion.cuentaId === 'otra' ? consignacion.otraCuenta || null : null,
+    banco: consignacion.banco || '',
+    tipoCuenta: consignacion.tipoCuenta || '',
+    numeroCuenta: consignacion.numeroCuenta || '',
+  }));
+
+  if (soportesMetadata.length > 0) {
+    const principalUrl = input.url_foto_consignacion || '';
+    const alreadyHasPrincipal = principalUrl
+      ? soportesMetadata.some((consignacion) => consignacion.fotoUrl === principalUrl)
+      : true;
+    const soportes = alreadyHasPrincipal
+      ? soportesMetadata
+      : [
+          {
+            id: 'consignacion-principal',
+            fotoUrl: principalUrl,
+            valor: 0,
+            cuentaId: metadata?.cuentaId || undefined,
+            otraCuenta: metadata?.cuentaId === 'otra' ? metadata.otraCuenta || null : null,
+            banco: '',
+            tipoCuenta: '',
+            numeroCuenta: '',
+          },
+          ...soportesMetadata,
+        ];
+
+    return soportes.filter(
+      (consignacion) =>
+        Boolean(consignacion.fotoUrl) ||
+        (Number(consignacion.valor) || 0) > 0 ||
+        Boolean(consignacion.cuentaId) ||
+        Boolean(consignacion.otraCuenta?.banco) ||
+        Boolean(consignacion.banco) ||
+        Boolean(consignacion.numeroCuenta)
+    );
+  }
+
   const fotos = [input.url_foto_consignacion || '', ...(metadata?.fotos || [])].filter(Boolean);
-  return Array.from(new Set(fotos));
+  return fotos.map((fotoUrl, index) => ({
+    id: `consignacion-${index + 1}`,
+    fotoUrl,
+    valor: 0,
+    cuentaId: metadata?.cuentaId || undefined,
+    otraCuenta: metadata?.cuentaId === 'otra' ? metadata.otraCuenta || null : null,
+    banco: '',
+    tipoCuenta: '',
+    numeroCuenta: '',
+  }));
+};
+
+export const getConsignacionFotos = (input: {
+  url_foto_consignacion?: string | null;
+  firma_cajero_url?: string | null;
+}) => {
+  return Array.from(
+    new Set(
+      getConsignacionSoportes(input)
+        .map((consignacion) => consignacion.fotoUrl || '')
+        .filter(Boolean)
+    )
+  );
 };
