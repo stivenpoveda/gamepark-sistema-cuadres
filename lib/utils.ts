@@ -189,7 +189,7 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
         : [],
       consignaciones: Array.isArray(parsed.consignaciones)
         ? parsed.consignaciones
-            .map((item: unknown, index: number) => {
+            .map((item: unknown, index: number): ConsignacionSoporte | null => {
               if (!item || typeof item !== 'object') return null;
               const soporte = item as Record<string, unknown>;
               const otraCuenta =
@@ -212,7 +212,7 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
                 numeroCuenta: String(soporte.numeroCuenta || ''),
               } satisfies ConsignacionSoporte;
             })
-            .filter((item): item is ConsignacionSoporte => Boolean(item))
+            .filter((item: ConsignacionSoporte | null): item is ConsignacionSoporte => Boolean(item))
         : [],
     };
   } catch {

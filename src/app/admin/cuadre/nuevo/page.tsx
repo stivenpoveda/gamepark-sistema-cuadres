@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   CUENTAS_CONSIGNACION,
@@ -45,7 +45,15 @@ const categoriasGastos = [
   { value: 'Otros', label: 'Otros' },
 ];
 
-export default function CuadreWizard() {
+function CuadreWizardFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function CuadreWizardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emptyOtraCuenta: OtraCuentaConsignacion = {
@@ -1843,5 +1851,13 @@ export default function CuadreWizard() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CuadreWizard() {
+  return (
+    <Suspense fallback={<CuadreWizardFallback />}>
+      <CuadreWizardContent />
+    </Suspense>
   );
 }
