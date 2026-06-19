@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getDefaultRouteForRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 
@@ -39,11 +40,7 @@ export default function Home() {
           return;
         }
 
-        if (userData.rol === 'superadmin' || userData.rol === 'superadministrador') {
-          router.replace('/superadmin');
-        } else {
-          router.replace('/admin');
-        }
+        router.replace(getDefaultRouteForRole(userData.rol));
       } catch {
         if (!cancelled) router.replace('/login');
       } finally {

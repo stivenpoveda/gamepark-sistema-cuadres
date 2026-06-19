@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { canManageSuperadminCatalogs, isAccountingRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
 import { Loader2, LogOut, Trash2, Filter, Menu, X, FileText } from 'lucide-react';
@@ -116,6 +117,11 @@ export default function SuperAdminDashboard() {
   };
 
   const handleDeleteCuadre = async (cuadreId: string) => {
+    if (!canManageSuperadminCatalogs(user?.rol)) {
+      toast.error('No tienes permisos para eliminar cuadres');
+      return;
+    }
+
     if (!confirm('¿Estás seguro de que quieres eliminar este cuadre? Esta acción no se puede deshacer.')) return;
 
     setDeleting(cuadreId);
@@ -252,6 +258,9 @@ export default function SuperAdminDashboard() {
     );
   }
 
+  const canManageCatalogs = canManageSuperadminCatalogs(user?.rol);
+  const isAccountingUser = isAccountingRole(user?.rol);
+
   return (
     <div className="flex min-h-screen bg-company relative overflow-x-hidden">
       {/* Mobile Sidebar Overlay */}
@@ -281,7 +290,7 @@ export default function SuperAdminDashboard() {
               alt="Game Park"
               className="w-full"
             />
-            <p className="text-sm opacity-80 mt-2 text-center">Super Admin</p>
+            <p className="text-sm opacity-80 mt-2 text-center">{isAccountingUser ? 'Contabilidad' : 'Super Admin'}</p>
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 w-full px-4 py-3 mt-4 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
@@ -299,14 +308,18 @@ export default function SuperAdminDashboard() {
               <FileText className="w-5 h-5" />
               Reportes
             </a>
-            <a href="/superadmin/usuarios" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
-              <FileText className="w-5 h-5" />
-              Usuarios
-            </a>
-            <a href="/superadmin/puntos-de-venta" className="flex items-center gap-3 px-4 py-3 hover:bg-white/20 rounded-lg mb-2 transition-all duration-200">
-              <FileText className="w-5 h-5" />
-              Puntos de Venta
-            </a>
+            {canManageCatalogs && (
+              <a href="/superadmin/usuarios" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
+                <FileText className="w-5 h-5" />
+                Usuarios
+              </a>
+            )}
+            {canManageCatalogs && (
+              <a href="/superadmin/puntos-de-venta" className="flex items-center gap-3 px-4 py-3 hover:bg-white/20 rounded-lg mb-2 transition-all duration-200">
+                <FileText className="w-5 h-5" />
+                Puntos de Venta
+              </a>
+            )}
           </nav>
         </div>
       </aside>
@@ -331,8 +344,12 @@ export default function SuperAdminDashboard() {
 
           {/* Title */}
           <div className="p-4 md:p-6 md:pb-0">
-            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2 drop-shadow">Dashboard Super Admin</h1>
-            <p className="text-white/80 drop-shadow text-sm md:text-base">Resumen general del sistema</p>
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2 drop-shadow">
+              {isAccountingUser ? 'Dashboard Contabilidad' : 'Dashboard Super Admin'}
+            </h1>
+            <p className="text-white/80 drop-shadow text-sm md:text-base">
+              {isAccountingUser ? 'Consulta y descarga de cuadres' : 'Resumen general del sistema'}
+            </p>
           </div>
         </div>
 
@@ -485,17 +502,19 @@ export default function SuperAdminDashboard() {
                             >
                               Ver
                             </button>
-                            <button
-                              onClick={() => handleDeleteCuadre(cuadre.id)}
-                              disabled={deleting === cuadre.id}
-                              className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
-                            >
-                              {deleting === cuadre.id ? (
-                                <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                              )}
-                            </button>
+                            {canManageCatalogs && (
+                              <button
+                                onClick={() => handleDeleteCuadre(cuadre.id)}
+                                disabled={deleting === cuadre.id}
+                                className="text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                              >
+                                {deleting === cuadre.id ? (
+                                  <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

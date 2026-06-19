@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getDefaultRouteForRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -88,11 +89,7 @@ function LoginContent() {
         throw new Error('Usuario inactivo');
       }
 
-      if (userData.rol === 'superadmin' || userData.rol === 'superadministrador') {
-        router.replace('/superadmin');
-      } else {
-        router.replace('/admin');
-      }
+      router.replace(getDefaultRouteForRole(userData.rol));
       toast.success('Inicio de sesión exitoso');
     } catch (error: any) {
       toast.error(error.message || 'Error al iniciar sesión');

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Loader2, Plus, Edit2, Trash2, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { Usuario, PuntoDeVenta } from '@/types';
+import type { AppRole } from '@/lib/roles';
 import toast from 'react-hot-toast';
 
 export default function UsuariosPage() {
@@ -18,7 +19,7 @@ export default function UsuariosPage() {
     nombre: '',
     email: '',
     password: '',
-    rol: 'admin_pdv' as 'superadmin' | 'superadministrador' | 'admin_pdv',
+    rol: 'admin_pdv' as AppRole,
     punto_de_venta_id: '',
     activo: true,
   });
@@ -53,7 +54,7 @@ export default function UsuariosPage() {
             nombre: newUser.nombre,
             email: newUser.email,
             rol: newUser.rol,
-            punto_de_venta_id: newUser.punto_de_venta_id || null,
+            punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
           })
           .eq('id', editingUser.id);
         if (error) throw error;
@@ -68,7 +69,7 @@ export default function UsuariosPage() {
             email: newUser.email,
             password: newUser.password,
             rol: newUser.rol,
-            punto_de_venta_id: newUser.punto_de_venta_id || null,
+            punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
           }),
         });
 
@@ -197,8 +198,18 @@ export default function UsuariosPage() {
                     <td className="px-6 py-4 text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs ${
                         usuario.rol === 'superadmin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        } ${
+                        usuario.rol === 'superadministrador' ? 'bg-violet-100 text-violet-800' : ''
+                        } ${
+                        usuario.rol === 'contabilidad' ? 'bg-amber-100 text-amber-800' : ''
                       }`}>
-                        {usuario.rol}
+                        {usuario.rol === 'admin_pdv'
+                          ? 'Admin PdV'
+                          : usuario.rol === 'superadministrador'
+                          ? 'Superadministrador'
+                          : usuario.rol === 'contabilidad'
+                          ? 'Contabilidad'
+                          : 'Superadmin'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm">{usuario.punto_de_venta?.nombre || '-'}</td>
@@ -289,10 +300,17 @@ export default function UsuariosPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                   <select
                     value={newUser.rol}
-                    onChange={(e) => setNewUser({ ...newUser, rol: e.target.value as 'superadmin' | 'admin_pdv' })}
+                    onChange={(e) =>
+                      setNewUser({
+                        ...newUser,
+                        rol: e.target.value as AppRole,
+                        punto_de_venta_id: e.target.value === 'admin_pdv' ? newUser.punto_de_venta_id : '',
+                      })
+                    }
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                   >
                     <option value="admin_pdv">Admin PdV</option>
+                    <option value="contabilidad">Contabilidad</option>
                     <option value="superadmin">Superadmin</option>
                     <option value="superadministrador">Superadministrador</option>
                   </select>

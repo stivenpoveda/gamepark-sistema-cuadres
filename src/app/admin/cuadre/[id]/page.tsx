@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getDefaultRouteForRole, isAccountingRole, isSuperRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import {
   calcCuadreMetrics,
@@ -106,6 +107,10 @@ export default function CuadreDetalle() {
 
   const handleAprobar = async () => {
     if (!cuadre) return;
+    if (!isSuperRole(user?.rol)) {
+      toast.error('No tienes permisos para aprobar cuadres');
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await supabase
@@ -128,6 +133,10 @@ export default function CuadreDetalle() {
   };
 
   const handleDevolver = async () => {
+    if (!isSuperRole(user?.rol)) {
+      toast.error('No tienes permisos para devolver cuadres');
+      return;
+    }
     if (!cuadre || !observacionSuperadmin.trim()) {
       toast.error('Debes agregar una observación');
       return;
@@ -183,11 +192,7 @@ export default function CuadreDetalle() {
   };
 
   const goBack = () => {
-    if (isSuperadmin) {
-      router.push('/superadmin');
-    } else {
-      router.push('/admin');
-    }
+    router.push(getDefaultRouteForRole(user?.rol));
   };
 
   const cuadreMetrics = calcCuadreMetrics({
@@ -208,20 +213,218 @@ export default function CuadreDetalle() {
   const totalGeneralAConsignar = cuadreMetrics.totalGeneralAConsignar;
   const pendienteInicial = cuadreMetrics.pendienteInicial;
   const ventaAreasComunes = Number(cuadre.venta_confiteria || 0) || Number(cuadre.recibos || 0);
+  const isAccountingUser = isAccountingRole(user?.rol);
   const consignacionesDetalle = getConsignacionSoportes({
     url_foto_consignacion: cuadre.url_foto_consignacion,
     firma_cajero_url: cuadre.firma_cajero_url,
   });
 
-  const exportarCuadroDiarioPDF = () => {
-    const escapeHtml = (value: unknown) =>
-      String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+  const escapeHtml = (value: unknown) =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
 
+  const openPdfPrintWindow = (html: string) => {
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast.error('No se pudo abrir la ventana para imprimir el PDF');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    const tryPrint = () => {
+      try {
+        win.print();
+      } catch {
+        toast.error('No se pudo abrir la impresión del PDF');
+      }
+    };
+    win.onload = tryPrint;
+    setTimeout(tryPrint, 400);
+  };
+
+  const exportarCuadreCompletoPDF = () => {
+    const fileName = `CUADRE_${(cuadre.punto_de_venta?.nombre || 'LOCAL').replace(/\s+/g, '_')}_${cuadre.fecha}.pdf`;
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(fileName)}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; margin: 0; line-height: 1.35; }
+    .page { width: 100%; margin: 0 auto; background: #ffffff; }
+    .title { font-weight: 700; font-size: 20px; margin-bottom: 4px; }
+    .subtitle { color: #4b5563; margin-bottom: 4px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 16px 0; font-size: 12px; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; }
+    .card-label { color: #4b5563; font-size: 12px; margin-bottom: 6px; }
+    .card-value { font-size: 20px; font-weight: 700; }
+    .section { margin-top: 18px; }
+    .section-title { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
+    .row span:first-child { color: #374151; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 12px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    .support { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .support-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+    .support-label { font-size: 12px; color: #6b7280; }
+    .support-value { font-size: 14px; font-weight: 600; }
+    .note { white-space: pre-wrap; }
+    @media screen {
+      body { background: #e5e7eb; padding: 20px 0; }
+      .page {
+        max-width: 190mm;
+        min-height: calc(297mm - 24mm);
+        padding: 10mm 9mm;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+      }
+    }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .page {
+        max-width: none;
+        min-height: auto;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+  <div class="title">${escapeHtml(cuadre.punto_de_venta?.nombre || 'Cuadre')}</div>
+  <div class="subtitle">${escapeHtml(cuadre.punto_de_venta?.ciudad || '')}</div>
+  <div class="subtitle">${escapeHtml(formatDate(cuadre.fecha))}</div>
+
+  <div class="meta">
+    <div><strong>Estado:</strong> ${escapeHtml(cuadre.estado)}</div>
+    <div><strong>Usuario:</strong> ${escapeHtml(cuadre.usuario?.nombre || '')}</div>
+    <div><strong>Observación Superadmin:</strong> ${escapeHtml(cuadre.observacion_superadmin || 'N/A')}</div>
+    <div><strong>Observaciones:</strong> ${escapeHtml(cuadre.observaciones || 'N/A')}</div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Total Físico</div>
+      <div class="card-value">${escapeHtml(formatCOP(cuadre.total_fisico))}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Valor General a Consignar</div>
+      <div class="card-value">${escapeHtml(formatCOP(totalGeneralAConsignar))}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Diferencia</div>
+      <div class="card-value">${escapeHtml((Number(cuadre.sobrante) || 0) > 0 ? formatCOP(Number(cuadre.sobrante)) : (Number(cuadre.faltante) || 0) > 0 ? formatCOP(Number(cuadre.faltante)) : '$0')}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Denominaciones</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Denominación</th>
+          <th>Cantidad</th>
+          <th>Valor Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(cuadre.denominaciones_cuadre || [])
+          .map((d) => `<tr><td>${escapeHtml(formatCOP(d.denominacion))}</td><td>${escapeHtml(d.cantidad)}</td><td>${escapeHtml(formatCOP(d.valor_total))}</td></tr>`)
+          .join('') || '<tr><td colspan="3">Sin denominaciones registradas</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Ingresos, Deducciones y Tarjetas</div>
+    <div class="two-col">
+      <div>
+        <div class="row"><span>Venta Sistema</span><strong>${escapeHtml(formatCOP(cuadre.recaudo))}</strong></div>
+        <div class="row"><span>Venta Datafono</span><strong>${escapeHtml(formatCOP(cuadre.venta_tarjetas))}</strong></div>
+        <div class="row"><span>Venta Fiesta</span><strong>${escapeHtml(formatCOP(cuadre.venta_fiesta))}</strong></div>
+        <div class="row"><span>Venta Areas Comunes</span><strong>${escapeHtml(formatCOP(ventaAreasComunes))}</strong></div>
+        <div class="row"><span>Cajero Automático</span><strong>${escapeHtml(formatCOP(cuadre.venta_cajero_auto))}</strong></div>
+        <div class="row"><span>Total Gastos</span><strong>${escapeHtml(formatCOP(totalGastos))}</strong></div>
+        <div class="row"><span>Total Turneros</span><strong>${escapeHtml(formatCOP(totalTurneros))}</strong></div>
+        <div class="row"><span>Pendiente al Iniciar</span><strong>${escapeHtml(formatCOP(pendienteInicial))}</strong></div>
+        <div class="row"><span>Total General a Consignar</span><strong>${escapeHtml(formatCOP(totalGeneralAConsignar))}</strong></div>
+      </div>
+      <div>
+        <div class="row"><span>TAR Inicial</span><strong>${escapeHtml(cuadre.tar_inicial)}</strong></div>
+        <div class="row"><span>TAR Consumo</span><strong>${escapeHtml(cuadre.tar_consumo)}</strong></div>
+        <div class="row"><span>TAR Fiestas</span><strong>${escapeHtml(cuadre.tar_fiestas)}</strong></div>
+        <div class="row"><span>TAR Malas</span><strong>${escapeHtml(cuadre.tar_malas)}</strong></div>
+        <div class="row"><span>TAR Final</span><strong>${escapeHtml(cuadre.tar_final)}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Gastos</div>
+    ${(cuadre.gastos_diarios || [])
+      .map((g) => `<div class="row"><span>${escapeHtml(`${g.descripcion} - ${getGastoCategoriaLabel(g.categoria)}`)}</span><strong>${escapeHtml(formatCOP(g.valor))}</strong></div>`)
+      .join('') || '<div class="row"><span>Sin gastos registrados</span><strong>$0</strong></div>'}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Turneros</div>
+    ${(cuadre.pagos_turneros || [])
+      .map((t) => `<div class="row"><span>${escapeHtml(t.horario ? `${t.nombre_turnero} - ${t.horario}` : t.nombre_turnero)}</span><strong>${escapeHtml(formatCOP(t.valor))}</strong></div>`)
+      .join('') || '<div class="row"><span>Sin turneros registrados</span><strong>$0</strong></div>'}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Consignación y Administradora</div>
+    ${(consignacionesDetalle || [])
+      .map((consignacion, index) => {
+        const cuentaConsignacion =
+          consignacion.cuentaId === 'otra'
+            ? consignacion.otraCuenta
+            : getCuentaConsignacionById(consignacion.cuentaId);
+        return `<div class="support">
+          <div style="font-weight:700; margin-bottom:10px;">Consignación ${index + 1}</div>
+          <div class="support-grid">
+            <div><div class="support-label">Banco</div><div class="support-value">${escapeHtml(cuentaConsignacion?.banco || consignacion.otraCuenta?.banco || 'N/A')}</div></div>
+            <div><div class="support-label">Número de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A')}</div></div>
+            <div><div class="support-label">Tipo de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A')}</div></div>
+            <div><div class="support-label">Titular</div><div class="support-value">${escapeHtml(cuentaConsignacion?.titular || consignacion.otraCuenta?.titular || 'N/A')}</div></div>
+            <div><div class="support-label">Valor Informado</div><div class="support-value">${escapeHtml(formatCOP(Number(consignacion.valor) || 0))}</div></div>
+          </div>
+        </div>`;
+      })
+      .join('') || '<div class="row"><span>Sin consignaciones registradas</span><strong>$0</strong></div>'}
+    <div class="two-col" style="margin-top: 12px;">
+      <div class="row"><span>Administradora</span><strong>${escapeHtml(cuadre.nombre_administradora || 'N/A')}</strong></div>
+      <div class="row"><span>Cédula</span><strong>${escapeHtml(cuadre.cedula_administradora || 'N/A')}</strong></div>
+    </div>
+    <div class="two-col" style="margin-top: 12px;">
+      <div class="row"><span>Valor Consignado</span><strong>${escapeHtml(formatCOP(Number(cuadre.valor_consignado || 0)))}</strong></div>
+      <div class="row"><span>Pendiente Próximo Cuadre</span><strong>${escapeHtml(formatCOP(Number(cuadre.consignacion_pendiente || 0)))}</strong></div>
+    </div>
+  </div>
+  </div>
+</body>
+</html>`;
+
+    openPdfPrintWindow(html);
+  };
+
+  const exportarCuadroDiarioPDF = () => {
     const gastosArqueo = [
       'Mantenimiento y Reparaciones',
       'Pagos Tecnico - Auditor Mecanico',
@@ -474,24 +677,7 @@ export default function CuadreDetalle() {
 </body>
 </html>`;
 
-    const win = window.open('', '_blank');
-    if (!win) {
-      toast.error('No se pudo abrir la ventana para imprimir el PDF');
-      return;
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    const tryPrint = () => {
-      try {
-        win.print();
-      } catch {
-        toast.error('No se pudo abrir la impresión del PDF');
-      }
-    };
-    win.onload = tryPrint;
-    setTimeout(tryPrint, 400);
+    openPdfPrintWindow(html);
   };
 
   const exportarCuadroDiario = async () => {
@@ -956,6 +1142,15 @@ export default function CuadreDetalle() {
             </div>
             <div className="flex gap-3 items-center">
               {getEstadoBadge(cuadre.estado)}
+              {isAccountingUser && (
+                <button
+                  onClick={exportarCuadreCompletoPDF}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-sm hover:shadow transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  CUADRE PDF
+                </button>
+              )}
               <button
                 onClick={exportarCuadroDiario}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 shadow-sm hover:shadow transition-all"

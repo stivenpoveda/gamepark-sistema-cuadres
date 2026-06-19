@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { canManageSuperadminCatalogs, isAccountingRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getConsignacionSoportes, getCuentaConsignacionById, getGastoCategoriaLabel, parseConsignacionMetadata } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import type { CuadreDiario, PuntoDeVenta } from '@/types';
+import type { CuadreDiario, PuntoDeVenta, Usuario } from '@/types';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 
@@ -31,6 +32,7 @@ export default function SuperadminReportesPage() {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [useCardsLayout, setUseCardsLayout] = useState(false);
+  const [user, setUser] = useState<Usuario | null>(null);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
   const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number> >({});
@@ -53,12 +55,21 @@ export default function SuperadminReportesPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [pdvRes, cuadresRes, gastosRes, turnerosRes] = await Promise.all([
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const [userRes, pdvRes, cuadresRes, gastosRes, turnerosRes] = await Promise.all([
+        session?.user?.id
+          ? supabase.from('usuarios').select('*').eq('id', session.user.id).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
         supabase.from('puntos_de_venta').select('*'),
         supabase.from('cuadres_diarios').select('*').order('fecha', { ascending: false }),
         supabase.from('gastos_diarios').select('cuadre_id,valor'),
         supabase.from('pagos_turneros').select('cuadre_id,valor'),
       ]);
+
+      setUser(userRes.data || null);
 
       // Combine data como en la página principal
       const cuadresWithData = cuadresRes.data?.map(cuadre => ({
@@ -611,6 +622,9 @@ export default function SuperadminReportesPage() {
     );
   }
 
+  const canManageCatalogs = canManageSuperadminCatalogs(user?.rol);
+  const isAccountingUser = isAccountingRole(user?.rol);
+
   return (
     <div className="flex min-h-screen bg-company relative overflow-x-hidden">
       {sidebarOpen && (
@@ -631,7 +645,7 @@ export default function SuperadminReportesPage() {
               <X className="w-6 h-6" />
             </button>
             <img src="/logo-gamepark.png" alt="Game Park" className="w-full" />
-            <p className="text-sm opacity-80 mt-2 text-center">Super Admin</p>
+            <p className="text-sm opacity-80 mt-2 text-center">{isAccountingUser ? 'Contabilidad' : 'Super Admin'}</p>
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 w-full px-4 py-3 mt-4 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
@@ -649,14 +663,18 @@ export default function SuperadminReportesPage() {
               <FileText className="w-5 h-5" />
               Reportes
             </a>
-            <a href="/superadmin/usuarios" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
-              <FileText className="w-5 h-5" />
-              Usuarios
-            </a>
-            <a href="/superadmin/puntos-de-venta" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
-              <FileText className="w-5 h-5" />
-              Puntos de Venta
-            </a>
+            {canManageCatalogs && (
+              <a href="/superadmin/usuarios" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
+                <FileText className="w-5 h-5" />
+                Usuarios
+              </a>
+            )}
+            {canManageCatalogs && (
+              <a href="/superadmin/puntos-de-venta" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
+                <FileText className="w-5 h-5" />
+                Puntos de Venta
+              </a>
+            )}
           </nav>
         </div>
       </aside>
@@ -682,7 +700,9 @@ export default function SuperadminReportesPage() {
         <div className="p-4 md:p-6 max-w-full">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
             <div className="flex-1">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow">Reportes Generales</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow">
+                {isAccountingUser ? 'Reportes Contabilidad' : 'Reportes Generales'}
+              </h1>
               <p className="text-white/80 drop-shadow text-sm mt-1">Resumen por fechas y consolidado mensual</p>
             </div>
             <button
