@@ -632,6 +632,13 @@ export default function SuperadminReportesPage() {
             </button>
             <img src="/logo-gamepark.png" alt="Game Park" className="w-full" />
             <p className="text-sm opacity-80 mt-2 text-center">Super Admin</p>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 w-full px-4 py-3 mt-4 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
+            >
+              <LogOut className="w-5 h-5" />
+              Cerrar Sesión
+            </button>
           </div>
           <nav className="px-4 py-6 flex-1">
             <a href="/superadmin" className="flex items-center gap-3 px-4 py-3 hover:bg-white/10 rounded-lg mb-2 transition-all duration-200">
@@ -651,15 +658,6 @@ export default function SuperadminReportesPage() {
               Puntos de Venta
             </a>
           </nav>
-          <div className="p-6 border-t border-white/20">
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
-            >
-              <LogOut className="w-5 h-5" />
-              Cerrar Sesión
-            </button>
-          </div>
         </div>
       </aside>
 

@@ -250,6 +250,13 @@ export default function AdminDashboard() {
               alt="Game Park" 
               className="mx-auto w-full" 
             />
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 w-full px-4 py-3 mt-4 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
+            >
+              <LogOut className="w-5 h-5" />
+              Cerrar Sesión
+            </button>
           </div>
           <nav className="px-4 py-6 flex-1">
             <a href="/admin" className="flex items-center gap-3 px-4 py-3 bg-white/20 rounded-lg mb-2 hover:bg-white/30 transition-all duration-200">
@@ -269,15 +276,6 @@ export default function AdminDashboard() {
               Reportes
             </a>
           </nav>
-          <div className="p-6 border-t border-white/20">
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200"
-            >
-              <LogOut className="w-5 h-5" />
-              Cerrar Sesión
-            </button>
-          </div>
         </div>
       </aside>
       
