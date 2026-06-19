@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatCOP, getGastoCategoriaLabel, GASTO_CATEGORIA_TRANSPORTE_CODE, normalizeGastoCategoria } from '@/lib/utils';
-import { Loader2, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { GastoDiario, Usuario, PuntoDeVenta } from '@/types';
 import UploadFoto from '@/components/UploadFoto';
 import toast from 'react-hot-toast';
+import { cleanupPdvSupportHistory } from '@/lib/retention';
 
 const categoriasGastos = [
   { value: 'Mantenimiento y Reparaciones', label: 'Mantenimiento y Reparaciones' },
@@ -64,6 +65,12 @@ export default function GastosPage() {
       setPuntoVenta(userData?.punto_de_venta || null);
 
       if (userData?.punto_de_venta_id) {
+        try {
+          await cleanupPdvSupportHistory(userData.punto_de_venta_id);
+        } catch (cleanupError) {
+          console.error('Error al depurar historial de gastos/turneros:', cleanupError);
+        }
+
         const { data: cuadresData } = await supabase
           .from('cuadres_diarios')
           .select('id')
@@ -153,13 +160,6 @@ export default function GastosPage() {
     }
   };
 
-  const handleDeleteGasto = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar este gasto?')) return;
-    await supabase.from('gastos_diarios').delete().eq('id', id);
-    setGastos(gastos.filter((g) => g.id !== id));
-    toast.success('Gasto eliminado');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -197,6 +197,9 @@ export default function GastosPage() {
           <div className="flex-1">
             <h1 className="text-3xl font-bold text-gray-900">Gastos</h1>
             <p className="text-gray-600">{puntoVenta?.nombre}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              El historial se conserva por 1 ano y luego se elimina automaticamente.
+            </p>
           </div>
           <button
             onClick={() => setShowModal(true)}
@@ -224,12 +227,6 @@ export default function GastosPage() {
               </div>
               <div className="flex items-center gap-4">
                 <p className="text-xl font-bold">{formatCOP(gasto.valor)}</p>
-                <button
-                  onClick={() => handleDeleteGasto(gasto.id)}
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
               </div>
             </div>
           ))}

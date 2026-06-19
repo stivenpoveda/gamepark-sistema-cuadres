@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatCOP } from '@/lib/utils';
-import { Loader2, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { PagoTurnero, Usuario, PuntoDeVenta } from '@/types';
 import UploadFoto from '@/components/UploadFoto';
 import toast from 'react-hot-toast';
+import { cleanupPdvSupportHistory } from '@/lib/retention';
 
 export default function TurnerosPage() {
   const router = useRouter();
@@ -40,6 +41,12 @@ export default function TurnerosPage() {
       setPuntoVenta(userData?.punto_de_venta || null);
 
       if (userData?.punto_de_venta_id) {
+        try {
+          await cleanupPdvSupportHistory(userData.punto_de_venta_id);
+        } catch (cleanupError) {
+          console.error('Error al depurar historial de gastos/turneros:', cleanupError);
+        }
+
         const { data: cuadresData } = await supabase
           .from('cuadres_diarios')
           .select('id')
@@ -110,13 +117,6 @@ export default function TurnerosPage() {
     toast.success('Turnero agregado');
   };
 
-  const handleDeleteTurnero = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar este turnero?')) return;
-    await supabase.from('pagos_turneros').delete().eq('id', id);
-    setTurneros(turneros.filter((t) => t.id !== id));
-    toast.success('Turnero eliminado');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -154,6 +154,9 @@ export default function TurnerosPage() {
           <div className="flex-1">
             <h1 className="text-3xl font-bold text-gray-900">Turneros</h1>
             <p className="text-gray-600">{puntoVenta?.nombre}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              El historial se conserva por 1 ano y luego se elimina automaticamente.
+            </p>
           </div>
           <button
             onClick={() => setShowModal(true)}
@@ -181,12 +184,6 @@ export default function TurnerosPage() {
               </div>
               <div className="flex items-center gap-4">
                 <p className="text-xl font-bold">{formatCOP(turnero.valor)}</p>
-                <button
-                  onClick={() => handleDeleteTurnero(turnero.id)}
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
               </div>
             </div>
           ))}
