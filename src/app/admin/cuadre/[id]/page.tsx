@@ -214,6 +214,7 @@ export default function CuadreDetalle() {
   const pendienteInicial = cuadreMetrics.pendienteInicial;
   const ventaAreasComunes = Number(cuadre.venta_confiteria || 0) || Number(cuadre.recibos || 0);
   const isAccountingUser = isAccountingRole(user?.rol);
+  const canDownloadCuadrePdf = isAccountingUser || isSuperRole(user?.rol);
   const consignacionesDetalle = getConsignacionSoportes({
     url_foto_consignacion: cuadre.url_foto_consignacion,
     firma_cajero_url: cuadre.firma_cajero_url,
@@ -1142,7 +1143,7 @@ export default function CuadreDetalle() {
             </div>
             <div className="flex gap-3 items-center">
               {getEstadoBadge(cuadre.estado)}
-              {isAccountingUser && (
+              {canDownloadCuadrePdf && (
                 <button
                   onClick={exportarCuadreCompletoPDF}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-sm hover:shadow transition-all"
