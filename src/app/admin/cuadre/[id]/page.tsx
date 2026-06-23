@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { authorizedJsonFetch } from '@/lib/admin-bancos';
 import { getDefaultRouteForRole, isAccountingRole, isSuperRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import {
@@ -113,18 +114,33 @@ export default function CuadreDetalle() {
     }
     setSaving(true);
     try {
-      const { data } = await supabase
-        .from('cuadres_diarios')
-        .update({
-          estado: 'aprobado',
-          fecha_aprobacion: new Date().toISOString(),
-        })
-        .eq('id', cuadre.id)
-        .select()
-        .single();
+      const response = await authorizedJsonFetch<{
+        success: boolean;
+        cuadre: CuadreDiario;
+        autoRegistered?: boolean;
+        reason?: string;
+      }>('/api/admin/cuadres/aprobar', {
+        method: 'POST',
+        body: JSON.stringify({
+          cuadreId: cuadre.id,
+        }),
+      });
 
-      setCuadre((prev) => (prev ? { ...prev, ...data } : data));
-      toast.success('Cuadre aprobado exitosamente');
+      setCuadre((prev) => (prev ? { ...prev, ...response.cuadre } : response.cuadre));
+
+      if (response.autoRegistered) {
+        toast.success(
+          response.reason === 'registro_parcial'
+            ? 'Cuadre aprobado. Se registraron las consignaciones reconocidas y quedaron otras pendientes en Ingresos Bancarios'
+            : 'Cuadre aprobado y registrado automaticamente en Admin Bancos'
+        );
+      } else if (response.reason === 'sin_consignacion') {
+        toast.success('Cuadre aprobado. No hubo consignacion para registrar');
+      } else if (response.reason === 'cuentas_no_resueltas') {
+        toast.success('Cuadre aprobado. Falta resolver la cuenta real de una o varias consignaciones en Ingresos Bancarios');
+      } else {
+        toast.success('Cuadre aprobado exitosamente');
+      }
     } catch (error) {
       toast.error('Error al aprobar el cuadre');
     } finally {

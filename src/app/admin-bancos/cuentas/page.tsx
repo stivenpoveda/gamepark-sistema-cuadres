@@ -12,6 +12,7 @@ import {
   buildLedgerRows,
   CuentaFinanciera,
   getAccountBalance,
+  getFinancialAccountTitular,
   MovimientoFinanciero,
 } from '@/lib/admin-bancos';
 
@@ -142,9 +143,7 @@ export default function CuentasBancariasPage() {
                       <p className="text-sm text-gray-500">
                         {cuenta.banco} {cuenta.numero_cuenta ? `- ${cuenta.numero_cuenta}` : ''}
                       </p>
-                      <p className="text-sm text-gray-500">
-                        Titular: {cuenta.titular || 'No definido'}
-                      </p>
+                      <p className="text-sm text-gray-500">Titular: {getFinancialAccountTitular(cuenta)}</p>
                       <p className="text-xs text-gray-500 mt-1">
                         {cuenta.tipo_entidad} · {cuenta.estado}
                       </p>
@@ -157,7 +156,7 @@ export default function CuentasBancariasPage() {
                         setForm({
                           nombre: cuenta.nombre,
                           banco: cuenta.banco,
-                          titular: cuenta.titular || '',
+                          titular: getFinancialAccountTitular(cuenta) === 'No definido' ? '' : getFinancialAccountTitular(cuenta),
                           numeroCuenta: cuenta.numero_cuenta || '',
                           tipoCuenta: cuenta.tipo_cuenta || '',
                           tipoEntidad: cuenta.tipo_entidad,

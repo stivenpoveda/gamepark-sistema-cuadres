@@ -26,7 +26,7 @@ const navItems = [
   { href: '/admin-bancos/movimientos', label: 'Movimientos', icon: Wallet },
   { href: '/admin-bancos/transferencias', label: 'Transferencias', icon: ArrowLeftRight },
   { href: '/admin-bancos/reportes', label: 'Reportes', icon: FileSpreadsheet },
-  { href: '/admin-bancos/gestion', label: 'Gestion de Cuentas', icon: Settings2 },
+  { href: '/admin-bancos/gestion', label: 'Ingresos Bancarios', icon: Settings2 },
 ] as const;
 
 export default function AdminBancosLayout({ children }: { children: React.ReactNode }) {
@@ -85,7 +85,7 @@ export default function AdminBancosLayout({ children }: { children: React.ReactN
       )}
 
       <aside
-        className={`inset-y-0 left-0 z-50 w-72 text-white flex-shrink-0 transform transition-transform duration-300 ${
+        className={`inset-y-0 left-0 z-50 w-64 lg:w-[17rem] text-white flex-shrink-0 transform transition-transform duration-300 ${
           sidebarOpen ? 'fixed translate-x-0' : 'hidden'
         } md:static md:block md:translate-x-0`}
       >
@@ -142,7 +142,7 @@ export default function AdminBancosLayout({ children }: { children: React.ReactN
             <div className="w-10" />
           </div>
         </div>
-        <div className="p-4 md:p-6">{children}</div>
+        <div className="mx-auto w-full max-w-[1680px] p-4 md:p-6 xl:p-8">{children}</div>
       </main>
     </div>
   );

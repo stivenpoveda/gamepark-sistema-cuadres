@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { CUENTAS_CONSIGNACION } from '@/lib/utils';
 
 export const ADMIN_BANCOS_DEFAULT_CATEGORIES = [
   'Arriendo',
@@ -106,6 +107,27 @@ export type FinancialSummary = {
   ingresosMes: number;
   egresosMes: number;
   flujoNeto: number;
+};
+
+const BASE_ACCOUNT_TITULARS = new Map<string, string>([
+  ...CUENTAS_CONSIGNACION.map(
+    (account): [string, string] => [
+    `${account.banco} ${account.tipoCuenta} ${account.numeroCuenta}`,
+    account.titular,
+  ]),
+  ['Caja Menor', 'DIVERSIONES DE COLOMBIA'],
+  ['Efectivo General', 'DIVERSIONES DE COLOMBIA'],
+]);
+
+export const getFinancialAccountTitular = (
+  account: Pick<CuentaFinanciera, 'nombre' | 'titular'>
+) => {
+  const storedTitular = account.titular?.trim();
+  if (storedTitular) {
+    return storedTitular;
+  }
+
+  return BASE_ACCOUNT_TITULARS.get(account.nombre) || 'No definido';
 };
 
 export const formatMovementTypeLabel = (type: MovementType) => {

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { ensureFinancialBaseData, syncApprovedCuadreToAccount, syncApprovedCuadresBatch } from '@/lib/admin-bancos-server';
+import {
+  ensureFinancialBaseData,
+  syncApprovedCuadreConsignaciones,
+  syncApprovedCuadresBatch,
+} from '@/lib/admin-bancos-server';
 import { requireRoleFromRequest } from '@/lib/server-auth';
 
 export async function POST(request: Request) {
@@ -11,9 +15,12 @@ export async function POST(request: Request) {
     await ensureFinancialBaseData(auth.profile);
 
     if (body.cuadreId) {
-      const result = await syncApprovedCuadreToAccount(auth.profile, {
+      const result = await syncApprovedCuadreConsignaciones(auth.profile, {
         cuadreId: body.cuadreId,
-        cuentaId: body.cuentaId,
+        overridesByConsignacionId:
+          body.overridesByConsignacionId && typeof body.overridesByConsignacionId === 'object'
+            ? body.overridesByConsignacionId
+            : undefined,
         forceHistorical: Boolean(body.forceHistorical),
       });
       return NextResponse.json({ success: true, result });
@@ -21,12 +28,11 @@ export async function POST(request: Request) {
 
     const results = await syncApprovedCuadresBatch(
       auth.profile,
-      body.cuentaId,
       Array.isArray(body.cuadreIds) ? body.cuadreIds : undefined
     );
 
     return NextResponse.json({ success: true, results });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'No se pudo sincronizar el cuadre' }, { status: 400 });
+    return NextResponse.json({ error: error?.message || 'No se pudo registrar el cuadre' }, { status: 400 });
   }
 }

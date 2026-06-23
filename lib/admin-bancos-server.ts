@@ -1,6 +1,11 @@
 import { supabaseServer } from '@/lib/supabase-server';
 import type { CuentaFinanciera, MovimientoFinanciero, MovementType, CategoriaFinanciera } from '@/lib/admin-bancos';
-import { CUENTAS_CONSIGNACION } from '@/lib/utils';
+import {
+  CUENTAS_CONSIGNACION,
+  getCuentaConsignacionById,
+  getCuadreConsignacionesRegistrables,
+  type CuadreConsignacionRegistrable,
+} from '@/lib/utils';
 import type { Usuario } from '@/types';
 
 type CreateMovementInput = {
@@ -44,6 +49,140 @@ const ACTIVE_MOVEMENTS_SELECT = `
   created_at,
   updated_at
 `;
+
+type CuadreSyncPlanItem = CuadreConsignacionRegistrable & {
+  cuentaFinancieraId: string | null;
+};
+
+const getFinancialAccountNameFromPreset = (cuentaId: string) => {
+  const selectedAccount = getCuentaConsignacionById(cuentaId);
+  if (!selectedAccount) {
+    return null;
+  }
+
+  return `${selectedAccount.banco} ${selectedAccount.tipoCuenta} ${selectedAccount.numeroCuenta}`;
+};
+
+const findFinancialAccountIdByDetails = async (input: {
+  banco?: string | null;
+  tipoCuenta?: string | null;
+  numeroCuenta?: string | null;
+}) => {
+  const banco = String(input.banco || '').trim();
+  const tipoCuenta = String(input.tipoCuenta || '').trim();
+  const numeroCuenta = String(input.numeroCuenta || '').trim();
+
+  if (!banco || !tipoCuenta || !numeroCuenta) {
+    return null;
+  }
+
+  const { data: financialAccount } = await supabaseServer
+    .from('cuentas_financieras')
+    .select('id')
+    .eq('banco', banco)
+    .eq('tipo_cuenta', tipoCuenta)
+    .eq('numero_cuenta', numeroCuenta)
+    .maybeSingle();
+
+  return financialAccount?.id || null;
+};
+
+export async function resolveFinancialAccountIdFromConsignacion(
+  consignacion: Pick<
+    CuadreConsignacionRegistrable,
+    'cuentaId' | 'banco' | 'tipoCuenta' | 'numeroCuenta' | 'isLegacy'
+  >
+) {
+  if (consignacion.cuentaId && consignacion.cuentaId !== 'otra') {
+    const financialAccountName = getFinancialAccountNameFromPreset(consignacion.cuentaId);
+
+    if (financialAccountName) {
+      const { data: financialAccount } = await supabaseServer
+        .from('cuentas_financieras')
+        .select('id')
+        .eq('nombre', financialAccountName)
+        .maybeSingle();
+
+      if (financialAccount?.id) {
+        return financialAccount.id;
+      }
+    }
+  }
+
+  if (consignacion.isLegacy) {
+    return null;
+  }
+
+  return findFinancialAccountIdByDetails({
+    banco: consignacion.banco,
+    tipoCuenta: consignacion.tipoCuenta,
+    numeroCuenta: consignacion.numeroCuenta,
+  });
+}
+
+export async function buildCuadreConsignacionSyncPlan(
+  cuadre: {
+    valor_consignado?: number | string | null;
+    firma_cajero_url?: string | null;
+    url_foto_consignacion?: string | null;
+    cuenta_financiera_destino_id?: string | null;
+  }
+) {
+  const consignaciones = getCuadreConsignacionesRegistrables({
+    firma_cajero_url: cuadre.firma_cajero_url,
+    url_foto_consignacion: cuadre.url_foto_consignacion,
+    valor_consignado: cuadre.valor_consignado,
+  });
+
+  const plan: CuadreSyncPlanItem[] = [];
+
+  for (const consignacion of consignaciones) {
+    const cuentaFinancieraId =
+      consignacion.isLegacy && cuadre.cuenta_financiera_destino_id
+        ? cuadre.cuenta_financiera_destino_id
+        : await resolveFinancialAccountIdFromConsignacion(consignacion);
+
+    plan.push({
+      ...consignacion,
+      cuentaFinancieraId,
+    });
+  }
+
+  return plan;
+}
+
+export async function resolveFinancialAccountIdFromCuadre(
+  cuadre: {
+    firma_cajero_url?: string | null;
+    url_foto_consignacion?: string | null;
+    valor_consignado?: number | string | null;
+    cuenta_financiera_destino_id?: string | null;
+  },
+  actor?: Usuario
+) {
+  if (cuadre.cuenta_financiera_destino_id) {
+    return cuadre.cuenta_financiera_destino_id;
+  }
+
+  if (actor) {
+    await ensureFinancialBaseData(actor);
+  }
+
+  const plan = await buildCuadreConsignacionSyncPlan(cuadre);
+  const cuentaIds = Array.from(
+    new Set(
+      plan
+        .map((item) => item.cuentaFinancieraId)
+        .filter((cuentaId): cuentaId is string => Boolean(cuentaId))
+    )
+  );
+
+  if (cuentaIds.length !== 1 || plan.some((item) => !item.cuentaFinancieraId)) {
+    return null;
+  }
+
+  return cuentaIds[0];
+}
 
 export async function ensureFinancialBaseData(actor: Usuario) {
   const { data: existingCategories } = await supabaseServer
@@ -286,12 +425,177 @@ export async function syncApprovedCuadreToAccount(
   };
 }
 
-export async function syncApprovedCuadresBatch(actor: Usuario, cuentaId: string, cuadreIds?: string[]) {
+export async function syncApprovedCuadreConsignaciones(
+  actor: Usuario,
+  params: {
+    cuadreId: string;
+    overridesByConsignacionId?: Record<string, string>;
+    forceHistorical?: boolean;
+  }
+) {
+  const { data: cuadre, error: cuadreError } = await supabaseServer
+    .from('cuadres_diarios')
+    .select('*, punto_de_venta:puntos_de_venta(id,nombre,ciudad)')
+    .eq('id', params.cuadreId)
+    .single();
+
+  if (cuadreError || !cuadre) {
+    throw new Error('No se encontro el cuadre a registrar');
+  }
+
+  if (cuadre.estado !== 'aprobado') {
+    throw new Error('Solo se pueden registrar cuadres aprobados');
+  }
+
+  await ensureFinancialBaseData(actor);
+
+  const plan = await buildCuadreConsignacionSyncPlan(cuadre);
+  if (plan.length === 0) {
+    throw new Error('El cuadre no tiene consignaciones validas para registrar en libro');
+  }
+
+  const { data: existingMovements, error: existingError } = await supabaseServer
+    .from('movimientos_financieros')
+    .select('id,cuenta_id,metadata')
+    .eq('cuadre_id', params.cuadreId)
+    .eq('tipo_movimiento', 'cuadre_aprobado')
+    .eq('activo', true);
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (params.forceHistorical) {
+    for (const movement of existingMovements || []) {
+      await softDeleteFinancialMovement(actor, movement.id);
+    }
+  }
+
+  const activeMovementMap = new Map<string, { id: string; cuenta_id: string }>();
+  let hasLegacyMovement = false;
+
+  for (const movement of existingMovements || []) {
+    const consignacionId = String(
+      (movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''
+    ).trim();
+
+    if (consignacionId) {
+      activeMovementMap.set(consignacionId, movement);
+    } else {
+      hasLegacyMovement = true;
+    }
+  }
+
+  const createdMovements: MovimientoFinanciero[] = [];
+  const skipped: Array<{ consignacionId: string; reason: string }> = [];
+
+  for (const consignacion of plan) {
+    const cuentaId =
+      params.overridesByConsignacionId?.[consignacion.id] || consignacion.cuentaFinancieraId;
+
+    if (!cuentaId) {
+      skipped.push({
+        consignacionId: consignacion.id,
+        reason: 'cuenta_no_resuelta',
+      });
+      continue;
+    }
+
+    const existingMovement = activeMovementMap.get(consignacion.id);
+    if (existingMovement && !params.forceHistorical) {
+      skipped.push({
+        consignacionId: consignacion.id,
+        reason:
+          existingMovement.cuenta_id === cuentaId ? 'ya_registrada' : 'requiere_reproceso_historico',
+      });
+      continue;
+    }
+
+    if (hasLegacyMovement && !params.forceHistorical) {
+      skipped.push({
+        consignacionId: consignacion.id,
+        reason: 'requiere_reproceso_historico',
+      });
+      continue;
+    }
+
+    const movement = await createFinancialMovement(actor, {
+      cuentaId,
+      tipoMovimiento: 'cuadre_aprobado',
+      descripcion: `Ingreso por cuadre aprobado ${cuadre.punto_de_venta?.nombre || 'PDV'} ${cuadre.fecha} - ${consignacion.descripcionCuenta}`,
+      fechaMovimiento: cuadre.fecha,
+      valor: consignacion.valor,
+      pdvId: cuadre.punto_de_venta_id,
+      cuadreId: cuadre.id,
+      cuentaContraparteId: null,
+      origen: params.forceHistorical ? 'historico' : 'cuadre_aprobado',
+      soporteUrl: consignacion.fotoUrl || null,
+      metadata: {
+        fecha_cuadre: cuadre.fecha,
+        pdv_nombre: cuadre.punto_de_venta?.nombre || null,
+        pdv_ciudad: cuadre.punto_de_venta?.ciudad || null,
+        consignacion_id: consignacion.id,
+        consignacion_cuenta: consignacion.descripcionCuenta,
+        consignacion_banco: consignacion.banco || null,
+        consignacion_tipo_cuenta: consignacion.tipoCuenta || null,
+        consignacion_numero_cuenta: consignacion.numeroCuenta || null,
+        consignacion_titular: consignacion.titular || null,
+        consignacion_valor: consignacion.valor,
+        consignacion_es_legacy: consignacion.isLegacy,
+      },
+    });
+
+    createdMovements.push(movement);
+  }
+
+  const { data: remainingMovements, error: remainingError } = await supabaseServer
+    .from('movimientos_financieros')
+    .select('id,cuenta_id')
+    .eq('cuadre_id', params.cuadreId)
+    .eq('tipo_movimiento', 'cuadre_aprobado')
+    .eq('activo', true)
+    .order('created_at', { ascending: true });
+
+  if (remainingError) {
+    throw remainingError;
+  }
+
+  const uniqueAccountIds = Array.from(
+    new Set((remainingMovements || []).map((movement) => movement.cuenta_id).filter(Boolean))
+  );
+  const referenceMovementId =
+    remainingMovements && remainingMovements.length === 1 ? remainingMovements[0].id : null;
+  const referenceAccountId =
+    uniqueAccountIds.length === 1 ? uniqueAccountIds[0] : null;
+
+  await supabaseServer
+    .from('cuadres_diarios')
+    .update({
+      cuenta_financiera_destino_id: referenceAccountId,
+      movimiento_financiero_sync_id: referenceMovementId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.cuadreId);
+
+  return {
+    synced: createdMovements.length > 0,
+    message:
+      createdMovements.length > 0
+        ? 'Consignaciones registradas en el libro bancario'
+        : 'No hubo consignaciones nuevas para registrar',
+    createdCount: createdMovements.length,
+    pendingCount: skipped.filter((item) => item.reason === 'cuenta_no_resuelta').length,
+    skipped,
+    movements: createdMovements,
+  };
+}
+
+export async function syncApprovedCuadresBatch(actor: Usuario, cuadreIds?: string[]) {
   let query = supabaseServer
     .from('cuadres_diarios')
     .select('id')
     .eq('estado', 'aprobado')
-    .or('movimiento_financiero_sync_id.is.null,cuenta_financiera_destino_id.is.null');
+    .order('fecha', { ascending: false });
 
   if (cuadreIds && cuadreIds.length > 0) {
     query = query.in('id', cuadreIds);
@@ -305,13 +609,16 @@ export async function syncApprovedCuadresBatch(actor: Usuario, cuentaId: string,
   const results = [];
   for (const cuadre of pendingCuadres || []) {
     try {
-      const result = await syncApprovedCuadreToAccount(actor, {
+      const result = await syncApprovedCuadreConsignaciones(actor, {
         cuadreId: cuadre.id,
-        cuentaId,
       });
       results.push({ cuadreId: cuadre.id, ok: true, ...result });
     } catch (syncError: any) {
-      results.push({ cuadreId: cuadre.id, ok: false, error: syncError?.message || 'No se pudo sincronizar' });
+      results.push({
+        cuadreId: cuadre.id,
+        ok: false,
+        error: syncError?.message || 'No se pudo registrar',
+      });
     }
   }
 

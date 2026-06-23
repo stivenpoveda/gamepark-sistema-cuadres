@@ -322,3 +322,80 @@ export const getConsignacionFotos = (input: {
     )
   );
 };
+
+export type CuadreConsignacionRegistrable = {
+  id: string;
+  valor: number;
+  cuentaId?: string;
+  banco: string;
+  tipoCuenta: string;
+  numeroCuenta: string;
+  titular: string;
+  fotoUrl?: string;
+  otraCuenta?: OtraCuentaConsignacion | null;
+  descripcionCuenta: string;
+  isLegacy: boolean;
+};
+
+export const getCuadreConsignacionesRegistrables = (input: {
+  firma_cajero_url?: string | null;
+  url_foto_consignacion?: string | null;
+  valor_consignado?: number | string | null;
+}) => {
+  const soportes = getConsignacionSoportes({
+    url_foto_consignacion: input.url_foto_consignacion,
+    firma_cajero_url: input.firma_cajero_url,
+  })
+    .filter((consignacion) => Number(consignacion.valor || 0) > 0)
+    .map((consignacion): CuadreConsignacionRegistrable => {
+      const cuentaPredefinida = getCuentaConsignacionById(consignacion.cuentaId);
+      const banco = cuentaPredefinida?.banco || consignacion.otraCuenta?.banco || consignacion.banco || '';
+      const tipoCuenta =
+        cuentaPredefinida?.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || consignacion.tipoCuenta || '';
+      const numeroCuenta =
+        cuentaPredefinida?.numeroCuenta ||
+        consignacion.otraCuenta?.numeroCuenta ||
+        consignacion.numeroCuenta ||
+        '';
+      const titular = cuentaPredefinida?.titular || consignacion.otraCuenta?.titular || '';
+
+      return {
+        id: consignacion.id,
+        valor: Number(consignacion.valor || 0),
+        cuentaId: consignacion.cuentaId || undefined,
+        banco,
+        tipoCuenta,
+        numeroCuenta,
+        titular,
+        fotoUrl: consignacion.fotoUrl || '',
+        otraCuenta: consignacion.cuentaId === 'otra' ? consignacion.otraCuenta || null : null,
+        descripcionCuenta: [banco, tipoCuenta, numeroCuenta].filter(Boolean).join(' ').trim() || 'Cuenta por definir',
+        isLegacy: false,
+      };
+    });
+
+  if (soportes.length > 0) {
+    return soportes;
+  }
+
+  const valorLegacy = Number(input.valor_consignado || 0);
+  if (valorLegacy <= 0) {
+    return [];
+  }
+
+  return [
+    {
+      id: 'consignacion-total',
+      valor: valorLegacy,
+      cuentaId: undefined,
+      banco: '',
+      tipoCuenta: '',
+      numeroCuenta: '',
+      titular: '',
+      fotoUrl: input.url_foto_consignacion || '',
+      otraCuenta: null,
+      descripcionCuenta: 'Consignacion total del cuadre',
+      isLegacy: true,
+    } satisfies CuadreConsignacionRegistrable,
+  ];
+};
