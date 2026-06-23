@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/auth-helpers-nextjs';
 import {
+  canAccessBankAdmin,
   canManageSuperadminCatalogs,
   getDefaultRouteForRole,
   isAccountingRole,
@@ -33,7 +34,10 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const isProtected = pathname.startsWith('/admin') || pathname.startsWith('/superadmin');
+  const isAdminPath = pathname === '/admin' || pathname.startsWith('/admin/');
+  const isSuperadminPath = pathname === '/superadmin' || pathname.startsWith('/superadmin/');
+  const isBankAdminPath = pathname === '/admin-bancos' || pathname.startsWith('/admin-bancos/');
+  const isProtected = isAdminPath || isSuperadminPath || isBankAdminPath;
 
   if (!session) {
     if (isProtected) {
@@ -67,9 +71,16 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith('/superadmin') && profile.rol === 'admin_pdv') {
+  if (isSuperadminPath && profile.rol === 'admin_pdv') {
     const url = req.nextUrl.clone();
     url.pathname = '/admin';
+    url.search = '';
+    return NextResponse.redirect(url);
+  }
+
+  if (isBankAdminPath && !canAccessBankAdmin(profile.rol)) {
+    const url = req.nextUrl.clone();
+    url.pathname = getDefaultRouteForRole(profile.rol);
     url.search = '';
     return NextResponse.redirect(url);
   }
@@ -86,16 +97,23 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith('/admin') && isSuperRole(profile.rol) && !isAdminCuadreDetalle) {
+  if (isAdminPath && isSuperRole(profile.rol) && !isAdminCuadreDetalle) {
     const url = req.nextUrl.clone();
     url.pathname = '/superadmin';
     url.search = '';
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith('/admin') && isAccountingRole(profile.rol) && !isAdminCuadreDetalle) {
+  if (isAdminPath && isAccountingRole(profile.rol) && !isAdminCuadreDetalle) {
     const url = req.nextUrl.clone();
     url.pathname = '/superadmin';
+    url.search = '';
+    return NextResponse.redirect(url);
+  }
+
+  if (isSuperadminPath && canAccessBankAdmin(profile.rol)) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/admin-bancos';
     url.search = '';
     return NextResponse.redirect(url);
   }

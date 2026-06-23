@@ -122,7 +122,7 @@ export default function CuadreDetalle() {
         .eq('id', cuadre.id)
         .select()
         .single();
-      
+
       setCuadre((prev) => (prev ? { ...prev, ...data } : data));
       toast.success('Cuadre aprobado exitosamente');
     } catch (error) {

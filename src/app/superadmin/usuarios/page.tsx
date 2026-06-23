@@ -202,6 +202,8 @@ export default function UsuariosPage() {
                         usuario.rol === 'superadministrador' ? 'bg-violet-100 text-violet-800' : ''
                         } ${
                         usuario.rol === 'contabilidad' ? 'bg-amber-100 text-amber-800' : ''
+                        } ${
+                        usuario.rol === 'tesoreria' ? 'bg-emerald-100 text-emerald-800' : ''
                       }`}>
                         {usuario.rol === 'admin_pdv'
                           ? 'Admin PdV'
@@ -209,6 +211,8 @@ export default function UsuariosPage() {
                           ? 'Superadministrador'
                           : usuario.rol === 'contabilidad'
                           ? 'Contabilidad'
+                          : usuario.rol === 'tesoreria'
+                          ? 'Admin Bancos'
                           : 'Superadmin'}
                       </span>
                     </td>
@@ -311,6 +315,7 @@ export default function UsuariosPage() {
                   >
                     <option value="admin_pdv">Admin PdV</option>
                     <option value="contabilidad">Contabilidad</option>
+                    <option value="tesoreria">Admin Bancos</option>
                     <option value="superadmin">Superadmin</option>
                     <option value="superadministrador">Superadministrador</option>
                   </select>

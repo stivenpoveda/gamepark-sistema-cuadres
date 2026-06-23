@@ -11,7 +11,7 @@ export type Usuario = {
   id: string;
   nombre: string;
   email: string;
-  rol: 'superadmin' | 'superadministrador' | 'admin_pdv' | 'contabilidad';
+  rol: 'superadmin' | 'superadministrador' | 'admin_pdv' | 'contabilidad' | 'tesoreria';
   punto_de_venta_id?: string;
   activo: boolean;
   created_at: string;

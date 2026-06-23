@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
     if (error?.code === '23514' && String(error?.message || '').includes('usuarios_rol_check')) {
       return NextResponse.json(
-        { error: `La base de datos aun no acepta el rol "${normalizedRol}". Debes ejecutar el SQL agregar_rol_contabilidad.sql en Supabase.` },
+        { error: `La base de datos aun no acepta el rol "${normalizedRol}". Debes ejecutar el SQL correspondiente en Supabase.` },
         { status: 400 }
       );
     }
