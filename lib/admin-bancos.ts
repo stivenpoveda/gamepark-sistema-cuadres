@@ -141,6 +141,25 @@ export const formatMovementTypeLabel = (type: MovementType) => {
   return labels[type] || type;
 };
 
+export const formatMovementOriginLabel = (origin: MovimientoFinanciero['origen']) => {
+  const labels: Record<MovimientoFinanciero['origen'], string> = {
+    manual: 'Manual',
+    transferencia: 'Transferencia',
+    cuadre_aprobado: 'Cuadre Aprobado',
+    historico: 'Historico',
+  };
+
+  return labels[origin] || origin;
+};
+
+export const isManualBookMovement = (
+  movement: Pick<MovimientoFinanciero, 'origen' | 'tipo_movimiento'>
+) => movement.origen === 'manual' && (movement.tipo_movimiento === 'ingreso' || movement.tipo_movimiento === 'egreso');
+
+export const isAutomaticBookMovement = (
+  movement: Pick<MovimientoFinanciero, 'origen' | 'tipo_movimiento'>
+) => !isManualBookMovement(movement);
+
 export const isMovementIncome = (type: MovementType) =>
   type === 'ingreso' || type === 'transferencia_entrada' || type === 'cuadre_aprobado';
 

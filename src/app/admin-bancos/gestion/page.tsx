@@ -36,6 +36,8 @@ type ConsignacionFila = {
   valor: number;
   descripcionCuenta: string;
   suggestedAccountId: string;
+  titular: string;
+  isInformative: boolean;
 };
 
 const getConsignacionKey = (cuadreId: string, consignacionId: string) => `${cuadreId}::${consignacionId}`;
@@ -44,6 +46,10 @@ const findAccountIdByConsignacion = (
   cuentas: CuentaFinanciera[],
   consignacion: ReturnType<typeof getCuadreConsignacionesRegistrables>[number]
 ) => {
+  if (consignacion.isInformative) {
+    return '';
+  }
+
   if (!consignacion.banco || !consignacion.tipoCuenta || !consignacion.numeroCuenta) {
     return '';
   }
@@ -116,6 +122,10 @@ export default function GestionAdminBancosPage() {
         });
 
         consignaciones.forEach((consignacion) => {
+          if (consignacion.isInformative) {
+            return;
+          }
+
           const key = getConsignacionKey(cuadre.id, consignacion.id);
           const movimiento = (movementsRes.data || []).find((item: any) => {
             const metadata = (item.metadata || {}) as Record<string, unknown>;
@@ -193,12 +203,21 @@ export default function GestionAdminBancosPage() {
   }, [movimientosCuadre]);
 
   const syncCuadre = async (cuadre: CuadreAprobado, consignaciones: ConsignacionFila[]) => {
+    const consignacionesRegistrables = consignaciones.filter((consignacion) => !consignacion.isInformative);
+
+    if (consignacionesRegistrables.length === 0) {
+      toast.success(
+        'Este cuadre solo tiene movimientos informativos a cuenta no registrada. No genera ingreso en libro.'
+      );
+      return;
+    }
+
     if (consignaciones.length === 0) {
       toast.error('Este cuadre no tiene consignaciones con valor para registrar');
       return;
     }
 
-    const missingAccount = consignaciones.find(
+    const missingAccount = consignacionesRegistrables.find(
       (consignacion) => !syncAccountByConsignacion[consignacion.key]
     );
 
@@ -207,7 +226,7 @@ export default function GestionAdminBancosPage() {
       return;
     }
 
-    const currentMovements = consignaciones.filter((consignacion) =>
+    const currentMovements = consignacionesRegistrables.filter((consignacion) =>
       movimientosPorClave.has(consignacion.key)
     );
     const accountChanged = currentMovements.some((consignacion) => {
@@ -217,7 +236,7 @@ export default function GestionAdminBancosPage() {
 
     const forceHistorical = legacyCuadres.has(cuadre.id) || accountChanged;
     const overridesByConsignacionId = Object.fromEntries(
-      consignaciones.map((consignacion) => [
+      consignacionesRegistrables.map((consignacion) => [
         consignacion.consignacionId,
         syncAccountByConsignacion[consignacion.key],
       ])
@@ -230,6 +249,7 @@ export default function GestionAdminBancosPage() {
         result: {
           createdCount: number;
           pendingCount: number;
+          informativeCount?: number;
         };
       }>('/api/admin-bancos/cuadres/sincronizar', {
         method: 'POST',
@@ -248,6 +268,8 @@ export default function GestionAdminBancosPage() {
         );
       } else if (response.result.createdCount > 0) {
         toast.success('Se registraron las consignaciones con cuenta resuelta y quedaron otras pendientes');
+      } else if (response.result.informativeCount) {
+        toast.success('Solo habia movimientos informativos a cuenta no registrada. No se genero ingreso en libro.');
       } else {
         toast.error('No hubo cambios nuevos para registrar');
       }
@@ -301,14 +323,24 @@ export default function GestionAdminBancosPage() {
                 valor: consignacion.valor,
                 descripcionCuenta: consignacion.descripcionCuenta,
                 suggestedAccountId: findAccountIdByConsignacion(cuentas, consignacion),
+                titular: consignacion.titular,
+                isInformative: consignacion.isInformative,
               }));
 
-              const totalRegistrado = consignaciones.filter((consignacion) =>
+              const consignacionesRegistrables = consignaciones.filter(
+                (consignacion) => !consignacion.isInformative
+              );
+              const consignacionesInformativas = consignaciones.filter(
+                (consignacion) => consignacion.isInformative
+              );
+              const totalRegistrado = consignacionesRegistrables.filter((consignacion) =>
                 movimientosPorClave.has(consignacion.key)
               ).length;
+              const onlyInformative =
+                consignaciones.length > 0 && consignacionesRegistrables.length === 0;
               const allRegistered =
-                consignaciones.length > 0 &&
-                totalRegistrado === consignaciones.length &&
+                consignacionesRegistrables.length > 0 &&
+                totalRegistrado === consignacionesRegistrables.length &&
                 !legacyCuadres.has(cuadre.id);
 
               return (
@@ -331,6 +363,8 @@ export default function GestionAdminBancosPage() {
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
                           consignaciones.length === 0
                             ? 'bg-gray-100 text-gray-700'
+                            : onlyInformative
+                              ? 'bg-slate-100 text-slate-700'
                             : allRegistered
                               ? 'bg-green-100 text-green-700'
                               : legacyCuadres.has(cuadre.id)
@@ -340,12 +374,19 @@ export default function GestionAdminBancosPage() {
                       >
                         {consignaciones.length === 0
                           ? 'Sin consignacion'
+                          : onlyInformative
+                            ? 'Solo informativo'
                           : allRegistered
                             ? 'Todo registrado'
                             : legacyCuadres.has(cuadre.id)
                               ? 'Carga antigua por repartir'
                               : 'Pendiente por completar'}
                       </span>
+                      {consignacionesInformativas.length > 0 && (
+                        <p className="text-xs text-slate-600">
+                          Las consignaciones hechas a cuenta no registrada se muestran como soporte y no se asignan al libro.
+                        </p>
+                      )}
                       {legacyCuadres.has(cuadre.id) && (
                         <p className="text-xs text-amber-700">
                           Este cuadre tenia una carga vieja global. Al guardarlo se reparte por consignacion.
@@ -370,7 +411,9 @@ export default function GestionAdminBancosPage() {
                           {consignaciones.map((consignacion, index) => {
                             const selectedAccountId =
                               syncAccountByConsignacion[consignacion.key] || consignacion.suggestedAccountId || '';
-                            const existingMovement = movimientosPorClave.get(consignacion.key);
+                            const existingMovement = consignacion.isInformative
+                              ? undefined
+                              : movimientosPorClave.get(consignacion.key);
                             const accountChanged = existingMovement
                               ? existingMovement.cuenta_id !== selectedAccountId
                               : false;
@@ -385,44 +428,65 @@ export default function GestionAdminBancosPage() {
                                   {formatCOP(consignacion.valor)}
                                 </td>
                                 <td className="px-3 py-3 text-sm text-gray-600">
-                                  {consignacion.descripcionCuenta}
+                                  <p>{consignacion.descripcionCuenta}</p>
+                                  {consignacion.titular && (
+                                    <p className="text-xs text-gray-500">Titular: {consignacion.titular}</p>
+                                  )}
                                 </td>
                                 <td className="px-3 py-3 text-sm text-gray-600">
-                                  <select
-                                    value={selectedAccountId}
-                                    disabled={syncingCuadreId === cuadre.id}
-                                    onChange={(e) =>
-                                      setSyncAccountByConsignacion((current) => ({
-                                        ...current,
-                                        [consignacion.key]: e.target.value,
-                                      }))
-                                    }
-                                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
-                                  >
-                                    <option value="">Selecciona la cuenta real</option>
-                                    {cuentas.map((account) => (
-                                      <option key={account.id} value={account.id}>
-                                        {account.nombre}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  {consignacion.isInformative ? (
+                                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                      <p className="font-medium text-slate-700">No aplica</p>
+                                      <p className="text-xs text-slate-600">
+                                        Movimiento informado a cuenta no registrada o de tercero.
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <select
+                                      value={selectedAccountId}
+                                      disabled={syncingCuadreId === cuadre.id}
+                                      onChange={(e) =>
+                                        setSyncAccountByConsignacion((current) => ({
+                                          ...current,
+                                          [consignacion.key]: e.target.value,
+                                        }))
+                                      }
+                                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2"
+                                    >
+                                      <option value="">Selecciona la cuenta real</option>
+                                      {cuentas.map((account) => (
+                                        <option key={account.id} value={account.id}>
+                                          {account.nombre}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
                                 </td>
                                 <td className="px-3 py-3 text-sm">
                                   <span
                                     className={`px-2 py-1 rounded-full text-xs ${
-                                      existingMovement && !accountChanged
+                                      consignacion.isInformative
+                                        ? 'bg-slate-100 text-slate-700'
+                                        : existingMovement && !accountChanged
                                         ? 'bg-green-100 text-green-700'
                                         : selectedAccountId
                                           ? 'bg-blue-100 text-blue-700'
                                           : 'bg-yellow-100 text-yellow-800'
                                     }`}
                                   >
-                                    {existingMovement && !accountChanged
+                                    {consignacion.isInformative
+                                      ? 'Informativo'
+                                      : existingMovement && !accountChanged
                                       ? 'Registrado'
                                       : selectedAccountId
                                         ? 'Listo para guardar'
                                         : 'Pendiente'}
                                   </span>
+                                  {consignacion.isInformative && (
+                                    <p className="mt-1 text-xs text-slate-600">
+                                      Se conserva como justificacion del movimiento, pero no genera ingreso en libro.
+                                    </p>
+                                  )}
                                   {accountChanged && (
                                     <p className="mt-1 text-xs text-amber-700">
                                       Cambiaste la cuenta. Al guardar se reprocesa el cuadre.
@@ -441,7 +505,7 @@ export default function GestionAdminBancosPage() {
                     </p>
                   )}
 
-                  {consignaciones.length > 0 && (
+                  {consignacionesRegistrables.length > 0 && (
                     <div className="mt-4 flex justify-end">
                       <button
                         type="button"

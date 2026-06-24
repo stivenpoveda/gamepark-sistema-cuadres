@@ -145,6 +145,9 @@ export default function AdminBancosDashboardPage() {
             valor_consignado: cuadre.valor_consignado,
           })
             .filter((consignacion) => {
+              if (consignacion.isInformative) {
+                return false;
+              }
               const key = `${cuadre.id}::${consignacion.id}`;
               if (movementKeys.has(key)) {
                 return false;

@@ -370,6 +370,7 @@ export type CuadreConsignacionRegistrable = {
   otraCuenta?: OtraCuentaConsignacion | null;
   descripcionCuenta: string;
   isLegacy: boolean;
+  isInformative: boolean;
 };
 
 export const getCuadreConsignacionesRegistrables = (input: {
@@ -407,6 +408,7 @@ export const getCuadreConsignacionesRegistrables = (input: {
         otraCuenta: consignacion.cuentaId === 'otra' ? consignacion.otraCuenta || null : null,
         descripcionCuenta: [banco, tipoCuenta, numeroCuenta].filter(Boolean).join(' ').trim() || 'Cuenta por definir',
         isLegacy: false,
+        isInformative: consignacion.cuentaId === 'otra',
       };
     });
 
@@ -432,6 +434,7 @@ export const getCuadreConsignacionesRegistrables = (input: {
       otraCuenta: null,
       descripcionCuenta: 'Consignacion total del cuadre',
       isLegacy: true,
+      isInformative: false,
     } satisfies CuadreConsignacionRegistrable,
   ];
 };

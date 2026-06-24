@@ -136,6 +136,10 @@ export default function CuadreDetalle() {
         );
       } else if (response.reason === 'sin_consignacion') {
         toast.success('Cuadre aprobado. No hubo consignacion para registrar');
+      } else if (response.reason === 'solo_informativo') {
+        toast.success(
+          'Cuadre aprobado. La consignacion quedo visible en Ingresos Bancarios como soporte informativo y no genera ingreso en libro'
+        );
       } else if (response.reason === 'cuentas_no_resueltas') {
         toast.success('Cuadre aprobado. Falta resolver la cuenta real de una o varias consignaciones en Ingresos Bancarios');
       } else {

@@ -58,13 +58,16 @@ export async function POST(request: Request) {
 
     const plan = await buildCuadreConsignacionSyncPlan(approvedCuadre);
     const autoRegistrables = plan.filter((item) => item.cuentaFinancieraId);
+    const hasPendingResolution = plan.some((item) => !item.isInformative && !item.cuentaFinancieraId);
+    const hasInformativeOnly =
+      plan.length > 0 && !hasPendingResolution && autoRegistrables.length === 0;
 
     if (autoRegistrables.length === 0) {
       return NextResponse.json({
         success: true,
         cuadre: approvedCuadre,
         autoRegistered: false,
-        reason: 'cuentas_no_resueltas',
+        reason: hasInformativeOnly ? 'solo_informativo' : 'cuentas_no_resueltas',
       });
     }
 

@@ -26,6 +26,19 @@ type CreateMovementInput = {
   metadata?: Record<string, unknown>;
 };
 
+type UpdateMovementInput = {
+  movementId: string;
+  cuentaId: string;
+  tipoMovimiento: Extract<MovementType, 'ingreso' | 'egreso'>;
+  categoriaId?: string | null;
+  descripcion: string;
+  fechaMovimiento: string;
+  valor: number;
+  pdvId?: string | null;
+  centroCosto?: string | null;
+  soporteUrl?: string | null;
+};
+
 const ACTIVE_MOVEMENTS_SELECT = `
   id,
   cuenta_id,
@@ -97,6 +110,10 @@ export async function resolveFinancialAccountIdFromConsignacion(
   const financialAccountId = getFinancialAccountIdFromConsignacionId(consignacion.cuentaId);
   if (financialAccountId) {
     return financialAccountId;
+  }
+
+  if (consignacion.cuentaId === 'otra') {
+    return null;
   }
 
   if (consignacion.cuentaId && consignacion.cuentaId !== 'otra') {
@@ -377,6 +394,62 @@ export async function createFinancialMovement(actor: Usuario, input: CreateMovem
   return data as MovimientoFinanciero;
 }
 
+const getManualEditableMovement = async (movementId: string) => {
+  const { data: movement, error } = await supabaseServer
+    .from('movimientos_financieros')
+    .select(ACTIVE_MOVEMENTS_SELECT)
+    .eq('id', movementId)
+    .eq('activo', true)
+    .single();
+
+  if (error || !movement) {
+    throw new Error('No se encontro el movimiento');
+  }
+
+  if (movement.origen !== 'manual' || !['ingreso', 'egreso'].includes(movement.tipo_movimiento)) {
+    throw new Error('Solo puedes editar o reversar movimientos manuales');
+  }
+
+  return movement as MovimientoFinanciero;
+};
+
+export async function updateManualFinancialMovement(actor: Usuario, input: UpdateMovementInput) {
+  await getManualEditableMovement(input.movementId);
+
+  const payload = {
+    cuenta_id: input.cuentaId,
+    tipo_movimiento: input.tipoMovimiento,
+    categoria_id: input.categoriaId || null,
+    descripcion: input.descripcion.trim(),
+    fecha_movimiento: input.fechaMovimiento,
+    valor: Number(input.valor || 0),
+    pdv_id: input.pdvId || null,
+    centro_costo: input.centroCosto?.trim() || null,
+    soporte_url: input.soporteUrl || null,
+    updated_by: actor.id,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabaseServer
+    .from('movimientos_financieros')
+    .update(payload)
+    .eq('id', input.movementId)
+    .select(ACTIVE_MOVEMENTS_SELECT)
+    .single();
+
+  if (error || !data) {
+    throw error || new Error('No se pudo actualizar el movimiento');
+  }
+
+  return data as MovimientoFinanciero;
+}
+
+export async function reverseManualFinancialMovement(actor: Usuario, movementId: string) {
+  await getManualEditableMovement(movementId);
+  await softDeleteFinancialMovement(actor, movementId);
+  return true;
+}
+
 export async function syncApprovedCuadreToAccount(
   actor: Usuario,
   params: {
@@ -522,6 +595,14 @@ export async function syncApprovedCuadreConsignaciones(
   const skipped: Array<{ consignacionId: string; reason: string }> = [];
 
   for (const consignacion of plan) {
+    if (consignacion.isInformative) {
+      skipped.push({
+        consignacionId: consignacion.id,
+        reason: 'consignacion_informativa',
+      });
+      continue;
+    }
+
     const cuentaId =
       params.overridesByConsignacionId?.[consignacion.id] || consignacion.cuentaFinancieraId;
 
@@ -617,6 +698,7 @@ export async function syncApprovedCuadreConsignaciones(
         : 'No hubo consignaciones nuevas para registrar',
     createdCount: createdMovements.length,
     pendingCount: skipped.filter((item) => item.reason === 'cuenta_no_resuelta').length,
+    informativeCount: skipped.filter((item) => item.reason === 'consignacion_informativa').length,
     skipped,
     movements: createdMovements,
   };
