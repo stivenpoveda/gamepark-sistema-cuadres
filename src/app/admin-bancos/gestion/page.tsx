@@ -72,6 +72,7 @@ export default function GestionAdminBancosPage() {
   const [movimientosCuadre, setMovimientosCuadre] = useState<MovimientoCuadreRegistrado[]>([]);
   const [syncAccountByConsignacion, setSyncAccountByConsignacion] = useState<Record<string, string>>({});
   const [syncingCuadreId, setSyncingCuadreId] = useState('');
+  const [selectedPdvId, setSelectedPdvId] = useState('');
   const [savingCategory, setSavingCategory] = useState(false);
   const [categoryForm, setCategoryForm] = useState({
     id: '',
@@ -202,6 +203,33 @@ export default function GestionAdminBancosPage() {
     return set;
   }, [movimientosCuadre]);
 
+  const pdvOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          cuadres
+            .filter((cuadre) => cuadre.punto_de_venta?.id)
+            .map((cuadre) => [
+              cuadre.punto_de_venta!.id,
+              {
+                id: cuadre.punto_de_venta!.id,
+                nombre: cuadre.punto_de_venta?.nombre || 'PDV sin nombre',
+                ciudad: cuadre.punto_de_venta?.ciudad || '',
+              },
+            ])
+        ).values()
+      ).sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    [cuadres]
+  );
+
+  const visibleCuadres = useMemo(
+    () =>
+      cuadres.filter((cuadre) =>
+        selectedPdvId ? cuadre.punto_de_venta_id === selectedPdvId : true
+      ),
+    [cuadres, selectedPdvId]
+  );
+
   const syncCuadre = async (cuadre: CuadreAprobado, consignaciones: ConsignacionFila[]) => {
     const consignacionesRegistrables = consignaciones.filter((consignacion) => !consignacion.isInformative);
 
@@ -310,8 +338,25 @@ export default function GestionAdminBancosPage() {
             </p>
           </div>
 
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Filtrar por PDV">
+              <select
+                value={selectedPdvId}
+                onChange={(e) => setSelectedPdvId(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+              >
+                <option value="">Todos los PDV</option>
+                {pdvOptions.map((pdv) => (
+                  <option key={pdv.id} value={pdv.id}>
+                    {pdv.nombre}{pdv.ciudad ? ` - ${pdv.ciudad}` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
           <div className="space-y-5">
-            {cuadres.map((cuadre) => {
+            {visibleCuadres.map((cuadre) => {
               const consignaciones = getCuadreConsignacionesRegistrables({
                 firma_cajero_url: cuadre.firma_cajero_url,
                 url_foto_consignacion: cuadre.url_foto_consignacion,
@@ -525,9 +570,11 @@ export default function GestionAdminBancosPage() {
               );
             })}
 
-            {cuadres.length === 0 && (
+            {visibleCuadres.length === 0 && (
               <div className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-500">
-                No hay cuadres aprobados para revisar en ingresos bancarios.
+                {selectedPdvId
+                  ? 'No hay cuadres aprobados de ese PDV para revisar en ingresos bancarios.'
+                  : 'No hay cuadres aprobados para revisar en ingresos bancarios.'}
               </div>
             )}
           </div>
