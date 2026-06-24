@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
+  buildFinancialConsignacionAccountId,
   CUENTAS_CONSIGNACION,
   calcCuadreMetrics,
   formatCOP,
@@ -14,6 +15,7 @@ import {
   GASTO_CATEGORIA_TRANSPORTE_CODE,
   normalizeGastoCategoria,
   serializeConsignacionMetadata,
+  type CuentaConsignacionPredefinida,
   type ConsignacionSoporte,
   type OtraCuentaConsignacion,
 } from '@/lib/utils';
@@ -53,6 +55,8 @@ function CuadreWizardFallback() {
   );
 }
 
+type CuentaConsignacionRegistrada = CuentaConsignacionPredefinida;
+
 function CuadreWizardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -67,6 +71,7 @@ function CuadreWizardContent() {
     fotoUrl: '',
     valor: 0,
     cuentaId: '',
+    titular: '',
     otraCuenta: null,
     banco: '',
     tipoCuenta: '',
@@ -91,6 +96,9 @@ function CuadreWizardContent() {
   const [readyToSend, setReadyToSend] = useState(false);
   const [pendienteArrastreActual, setPendienteArrastreActual] = useState(0);
   const initGuardRef = useRef<string | null>(null);
+  const [cuentasConsignacionRegistradas, setCuentasConsignacionRegistradas] = useState<
+    CuentaConsignacionRegistrada[]
+  >(CUENTAS_CONSIGNACION);
 
   // Local state for form fields to prevent lag
   const [localCuadre, setLocalCuadre] = useState<Partial<CuadreDiario>>({});
@@ -202,6 +210,39 @@ function CuadreWizardContent() {
         if (pdvError) {
           toast.error('Error al obtener el punto de venta: ' + pdvError.message);
         }
+
+        const { data: cuentasFinancierasData } = await supabase
+          .from('cuentas_financieras')
+          .select('id,banco,titular,numero_cuenta,tipo_cuenta')
+          .eq('estado', 'activa')
+          .eq('tipo_entidad', 'bancaria')
+          .order('nombre');
+
+        const cuentasMap = new Map<string, CuentaConsignacionRegistrada>();
+        CUENTAS_CONSIGNACION.forEach((cuenta) => {
+          cuentasMap.set(`${cuenta.banco}::${cuenta.tipoCuenta}::${cuenta.numeroCuenta}`, cuenta);
+        });
+        (cuentasFinancierasData || []).forEach((cuenta) => {
+          const banco = String(cuenta.banco || '').trim();
+          const tipoCuenta = String(cuenta.tipo_cuenta || '').trim();
+          const numeroCuenta = String(cuenta.numero_cuenta || '').trim();
+
+          if (!banco || !tipoCuenta || !numeroCuenta) {
+            return;
+          }
+
+          const key = `${banco}::${tipoCuenta}::${numeroCuenta}`;
+          if (!cuentasMap.has(key)) {
+            cuentasMap.set(key, {
+              id: buildFinancialConsignacionAccountId(cuenta.id),
+              banco,
+              tipoCuenta,
+              numeroCuenta,
+              titular: String(cuenta.titular || '').trim(),
+            });
+          }
+        });
+        setCuentasConsignacionRegistradas(Array.from(cuentasMap.values()));
 
         setUser(userData);
         setPuntoVenta(puntoVentaData || null);
@@ -473,17 +514,26 @@ function CuadreWizardContent() {
     cuadre?.url_foto_consignacion ||
     null;
   const hayFotoConsignacion = consignacionesConFoto.length > 0;
-  const bancosConsignacionDisponibles = Array.from(new Set(CUENTAS_CONSIGNACION.map((cuenta) => cuenta.banco)));
+  const bancosConsignacionDisponibles = Array.from(
+    new Set(cuentasConsignacionRegistradas.map((cuenta) => cuenta.banco))
+  );
 
   const getTiposCuentaDisponibles = (banco: string) =>
     Array.from(
-      new Set(CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === banco).map((cuenta) => cuenta.tipoCuenta))
+      new Set(
+        cuentasConsignacionRegistradas
+          .filter((cuenta) => cuenta.banco === banco)
+          .map((cuenta) => cuenta.tipoCuenta)
+      )
     );
 
   const getCuentasDisponibles = (banco: string, tipoCuenta: string) =>
-    CUENTAS_CONSIGNACION.filter((cuenta) => cuenta.banco === banco && cuenta.tipoCuenta === tipoCuenta);
+    cuentasConsignacionRegistradas.filter(
+      (cuenta) => cuenta.banco === banco && cuenta.tipoCuenta === tipoCuenta
+    );
 
   const getCuentaPredefinidaSeleccionada = (consignacion: ConsignacionSoporte) =>
+    cuentasConsignacionRegistradas.find((cuenta) => cuenta.id === consignacion.cuentaId) ||
     getCuentaConsignacionById(consignacion.cuentaId) ||
     getCuentasDisponibles(consignacion.banco || '', consignacion.tipoCuenta || '').find(
       (cuenta) => cuenta.numeroCuenta === consignacion.numeroCuenta
@@ -535,6 +585,10 @@ function CuadreWizardContent() {
       url_foto_consignacion: principal,
       firma_cajero_url: serializeConsignacionMetadata({
         cuentaId: primeraConsignacion?.cuentaId || undefined,
+        titular: primeraConsignacion?.titular || undefined,
+        banco: primeraConsignacion?.banco || undefined,
+        tipoCuenta: primeraConsignacion?.tipoCuenta || undefined,
+        numeroCuenta: primeraConsignacion?.numeroCuenta || undefined,
         otraCuenta: primeraConsignacion?.cuentaId === 'otra' ? primeraConsignacion.otraCuenta || null : null,
         fotos: consignacionesConFoto.map((consignacion) => consignacion.fotoUrl || '').filter(Boolean).slice(1),
         consignaciones: nextConsignaciones,
@@ -571,6 +625,7 @@ function CuadreWizardContent() {
     const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => ({
       ...consignacion,
       cuentaId: mode === 'otra' ? 'otra' : '',
+      titular: '',
       otraCuenta: mode === 'otra' ? consignacion.otraCuenta || { ...emptyOtraCuenta } : null,
       banco: '',
       tipoCuenta: '',
@@ -587,6 +642,7 @@ function CuadreWizardContent() {
       tipoCuenta: '',
       numeroCuenta: '',
       cuentaId: '',
+      titular: '',
       otraCuenta: null,
     }));
     setConsignacionSoportes(nextConsignaciones);
@@ -599,6 +655,7 @@ function CuadreWizardContent() {
       tipoCuenta: nextTipoCuenta,
       numeroCuenta: '',
       cuentaId: '',
+      titular: '',
       otraCuenta: null,
     }));
     setConsignacionSoportes(nextConsignaciones);
@@ -607,7 +664,7 @@ function CuadreWizardContent() {
 
   const handleNumeroCuentaConsignacionChange = async (consignacionId: string, nextNumeroCuenta: string) => {
     const nextConsignaciones = updateConsignacionLocal(consignacionId, (consignacion) => {
-      const cuentaSeleccionada = CUENTAS_CONSIGNACION.find(
+      const cuentaSeleccionada = cuentasConsignacionRegistradas.find(
         (cuenta) =>
           cuenta.banco === consignacion.banco &&
           cuenta.tipoCuenta === consignacion.tipoCuenta &&
@@ -617,6 +674,7 @@ function CuadreWizardContent() {
         ...consignacion,
         numeroCuenta: nextNumeroCuenta,
         cuentaId: cuentaSeleccionada?.id || '',
+        titular: cuentaSeleccionada?.titular || '',
         otraCuenta: null,
       };
     });

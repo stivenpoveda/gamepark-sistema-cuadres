@@ -2,6 +2,7 @@ import { supabaseServer } from '@/lib/supabase-server';
 import type { CuentaFinanciera, MovimientoFinanciero, MovementType, CategoriaFinanciera } from '@/lib/admin-bancos';
 import {
   CUENTAS_CONSIGNACION,
+  getFinancialAccountIdFromConsignacionId,
   getCuentaConsignacionById,
   getCuadreConsignacionesRegistrables,
   type CuadreConsignacionRegistrable,
@@ -93,6 +94,11 @@ export async function resolveFinancialAccountIdFromConsignacion(
     'cuentaId' | 'banco' | 'tipoCuenta' | 'numeroCuenta' | 'isLegacy'
   >
 ) {
+  const financialAccountId = getFinancialAccountIdFromConsignacionId(consignacion.cuentaId);
+  if (financialAccountId) {
+    return financialAccountId;
+  }
+
   if (consignacion.cuentaId && consignacion.cuentaId !== 'otra') {
     const financialAccountName = getFinancialAccountNameFromPreset(consignacion.cuentaId);
 
@@ -236,19 +242,6 @@ export async function ensureFinancialBaseData(actor: Usuario) {
       updated_by: actor.id,
     })),
     {
-      nombre: 'Caja Menor',
-      banco: 'Interno',
-      titular: 'DIVERSIONES DE COLOMBIA',
-      numero_cuenta: null,
-      tipo_cuenta: 'Caja',
-      tipo_entidad: 'caja',
-      saldo_inicial: 0,
-      estado: 'activa',
-      descripcion: 'Caja menor operativa',
-      created_by: actor.id,
-      updated_by: actor.id,
-    },
-    {
       nombre: 'Efectivo General',
       banco: 'Interno',
       titular: 'DIVERSIONES DE COLOMBIA',
@@ -286,7 +279,29 @@ export async function ensureFinancialBaseData(actor: Usuario) {
       titular: 'DIVERSIONES DE COLOMBIA',
       updated_by: actor.id,
     })
-    .in('nombre', ['Caja Menor', 'Efectivo General']);
+    .in('nombre', ['Efectivo General']);
+
+  const { data: cajaMenorAccount } = await supabaseServer
+    .from('cuentas_financieras')
+    .select('id')
+    .eq('nombre', 'Caja Menor')
+    .maybeSingle();
+
+  if (cajaMenorAccount?.id) {
+    const { count } = await supabaseServer
+      .from('movimientos_financieros')
+      .select('id', { count: 'exact', head: true })
+      .eq('cuenta_id', cajaMenorAccount.id);
+
+    if (!count) {
+      await supabaseServer.from('cuentas_financieras').delete().eq('id', cajaMenorAccount.id);
+    } else {
+      await supabaseServer
+        .from('cuentas_financieras')
+        .update({ estado: 'inactiva', updated_by: actor.id })
+        .eq('id', cajaMenorAccount.id);
+    }
+  }
 
   const { data: nequiAccount } = await supabaseServer
     .from('cuentas_financieras')

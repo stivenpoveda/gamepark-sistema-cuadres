@@ -228,7 +228,6 @@ values
   ('Banco Bogota Ahorros 14207-6025', 'Banco Bogota', 'DAVID ARIAS', '14207-6025', 'Ahorros', 'bancaria', 0, 'activa', 'Cuenta base importada para DAVID ARIAS'),
   ('Bancolombia Ahorros 5142201-8682', 'Bancolombia', 'DAVID ARIAS', '5142201-8682', 'Ahorros', 'bancaria', 0, 'activa', 'Cuenta base importada para DAVID ARIAS'),
   ('Davivienda Ahorros 17977000-1354', 'Davivienda', 'DAVID ARIAS', '17977000-1354', 'Ahorros', 'bancaria', 0, 'activa', 'Cuenta base importada para DAVID ARIAS'),
-  ('Caja Menor', 'Interno', 'DIVERSIONES DE COLOMBIA', null, 'Caja', 'caja', 0, 'activa', 'Caja menor operativa'),
   ('Efectivo General', 'Interno', 'DIVERSIONES DE COLOMBIA', null, 'Efectivo', 'efectivo', 0, 'activa', 'Fondo general de efectivo')
 on conflict (nombre) do nothing;
 
@@ -241,7 +240,6 @@ update cuentas_financieras set titular = 'DIVERSIONES DE COLOMBIA' where nombre 
   'Davivienda Corriente 2669997203',
   'Davivienda Ahorros 260012-5575',
   'B. occidente Corriente 22584-6112',
-  'Caja Menor',
   'Efectivo General'
 );
 
@@ -254,6 +252,23 @@ update cuentas_financieras set titular = 'DAVID ARIAS' where nombre in (
 delete from cuentas_financieras
 where nombre = 'Nequi Empresarial'
   and not exists (
+    select 1
+    from movimientos_financieros
+    where movimientos_financieros.cuenta_id = cuentas_financieras.id
+  );
+
+delete from cuentas_financieras
+where nombre = 'Caja Menor'
+  and not exists (
+    select 1
+    from movimientos_financieros
+    where movimientos_financieros.cuenta_id = cuentas_financieras.id
+  );
+
+update cuentas_financieras
+set estado = 'inactiva'
+where nombre = 'Caja Menor'
+  and exists (
     select 1
     from movimientos_financieros
     where movimientos_financieros.cuenta_id = cuentas_financieras.id

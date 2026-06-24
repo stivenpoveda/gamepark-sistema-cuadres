@@ -115,7 +115,6 @@ const BASE_ACCOUNT_TITULARS = new Map<string, string>([
     `${account.banco} ${account.tipoCuenta} ${account.numeroCuenta}`,
     account.titular,
   ]),
-  ['Caja Menor', 'DIVERSIONES DE COLOMBIA'],
   ['Efectivo General', 'DIVERSIONES DE COLOMBIA'],
 ]);
 

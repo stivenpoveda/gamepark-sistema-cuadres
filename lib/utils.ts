@@ -136,6 +136,7 @@ export type ConsignacionSoporte = {
   fotoUrl?: string;
   valor?: number;
   cuentaId?: string;
+  titular?: string;
   otraCuenta?: OtraCuentaConsignacion | null;
   banco?: string;
   tipoCuenta?: string;
@@ -145,6 +146,10 @@ export type ConsignacionSoporte = {
 export type ConsignacionMetadata = {
   version: 1 | 2;
   cuentaId?: string;
+  titular?: string;
+  banco?: string;
+  tipoCuenta?: string;
+  numeroCuenta?: string;
   otraCuenta?: OtraCuentaConsignacion | null;
   fotos?: string[];
   consignaciones?: ConsignacionSoporte[];
@@ -164,6 +169,19 @@ export const CUENTAS_CONSIGNACION: CuentaConsignacionPredefinida[] = [
   { id: 'davidarias-davivienda-17977000-1354', banco: 'Davivienda', numeroCuenta: '17977000-1354', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
 ];
 
+export const buildFinancialConsignacionAccountId = (financialAccountId: string) =>
+  `financiera:${financialAccountId}`;
+
+export const isFinancialConsignacionAccountId = (cuentaId: string | null | undefined) =>
+  String(cuentaId || '').startsWith('financiera:');
+
+export const getFinancialAccountIdFromConsignacionId = (cuentaId: string | null | undefined) => {
+  const normalized = String(cuentaId || '').trim();
+  return isFinancialConsignacionAccountId(normalized)
+    ? normalized.slice('financiera:'.length) || null
+    : null;
+};
+
 const isJsonObject = (value: string) => value.trim().startsWith('{') && value.trim().endsWith('}');
 
 export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | null => {
@@ -176,6 +194,10 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
     return {
       version: parsed.version === 2 ? 2 : 1,
       cuentaId: typeof parsed.cuentaId === 'string' ? parsed.cuentaId : undefined,
+      titular: typeof parsed.titular === 'string' ? parsed.titular : undefined,
+      banco: typeof parsed.banco === 'string' ? parsed.banco : undefined,
+      tipoCuenta: typeof parsed.tipoCuenta === 'string' ? parsed.tipoCuenta : undefined,
+      numeroCuenta: typeof parsed.numeroCuenta === 'string' ? parsed.numeroCuenta : undefined,
       otraCuenta: parsed.otraCuenta && typeof parsed.otraCuenta === 'object'
         ? {
             banco: String(parsed.otraCuenta.banco || ''),
@@ -206,6 +228,7 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
                 fotoUrl: String(soporte.fotoUrl || ''),
                 valor: Number(soporte.valor) || 0,
                 cuentaId: typeof soporte.cuentaId === 'string' ? soporte.cuentaId : undefined,
+                titular: String(soporte.titular || ''),
                 otraCuenta,
                 banco: String(soporte.banco || ''),
                 tipoCuenta: String(soporte.tipoCuenta || ''),
@@ -222,6 +245,10 @@ export const parseConsignacionMetadata = (raw: unknown): ConsignacionMetadata | 
 
 export const serializeConsignacionMetadata = (input: {
   cuentaId?: string;
+  titular?: string;
+  banco?: string;
+  tipoCuenta?: string;
+  numeroCuenta?: string;
   otraCuenta?: OtraCuentaConsignacion | null;
   fotos?: string[];
   consignaciones?: ConsignacionSoporte[];
@@ -231,6 +258,7 @@ export const serializeConsignacionMetadata = (input: {
     fotoUrl: consignacion.fotoUrl || '',
     valor: Number(consignacion.valor) || 0,
     cuentaId: consignacion.cuentaId || undefined,
+    titular: consignacion.titular || '',
     otraCuenta: consignacion.cuentaId === 'otra' ? (consignacion.otraCuenta || null) : null,
     banco: consignacion.banco || '',
     tipoCuenta: consignacion.tipoCuenta || '',
@@ -239,6 +267,10 @@ export const serializeConsignacionMetadata = (input: {
   const payload: ConsignacionMetadata = {
     version: consignaciones.length > 0 ? 2 : 1,
     cuentaId: input.cuentaId || undefined,
+    titular: input.titular || undefined,
+    banco: input.banco || undefined,
+    tipoCuenta: input.tipoCuenta || undefined,
+    numeroCuenta: input.numeroCuenta || undefined,
     otraCuenta: input.otraCuenta || null,
     fotos: (input.fotos || []).filter(Boolean),
     consignaciones,
@@ -259,6 +291,7 @@ export const getConsignacionSoportes = (input: {
     fotoUrl: consignacion.fotoUrl || '',
     valor: Number(consignacion.valor) || 0,
     cuentaId: consignacion.cuentaId || undefined,
+    titular: consignacion.titular || '',
     otraCuenta: consignacion.cuentaId === 'otra' ? consignacion.otraCuenta || null : null,
     banco: consignacion.banco || '',
     tipoCuenta: consignacion.tipoCuenta || '',
@@ -278,10 +311,11 @@ export const getConsignacionSoportes = (input: {
             fotoUrl: principalUrl,
             valor: 0,
             cuentaId: metadata?.cuentaId || undefined,
+            titular: metadata?.titular || '',
             otraCuenta: metadata?.cuentaId === 'otra' ? metadata.otraCuenta || null : null,
-            banco: '',
-            tipoCuenta: '',
-            numeroCuenta: '',
+            banco: metadata?.banco || '',
+            tipoCuenta: metadata?.tipoCuenta || '',
+            numeroCuenta: metadata?.numeroCuenta || '',
           },
           ...soportesMetadata,
         ];
@@ -303,10 +337,11 @@ export const getConsignacionSoportes = (input: {
     fotoUrl,
     valor: 0,
     cuentaId: metadata?.cuentaId || undefined,
+    titular: metadata?.titular || '',
     otraCuenta: metadata?.cuentaId === 'otra' ? metadata.otraCuenta || null : null,
-    banco: '',
-    tipoCuenta: '',
-    numeroCuenta: '',
+    banco: metadata?.banco || '',
+    tipoCuenta: metadata?.tipoCuenta || '',
+    numeroCuenta: metadata?.numeroCuenta || '',
   }));
 };
 
@@ -357,7 +392,8 @@ export const getCuadreConsignacionesRegistrables = (input: {
         consignacion.otraCuenta?.numeroCuenta ||
         consignacion.numeroCuenta ||
         '';
-      const titular = cuentaPredefinida?.titular || consignacion.otraCuenta?.titular || '';
+      const titular =
+        cuentaPredefinida?.titular || consignacion.titular || consignacion.otraCuenta?.titular || '';
 
       return {
         id: consignacion.id,

@@ -416,10 +416,10 @@ export default function CuadreDetalle() {
         return `<div class="support">
           <div style="font-weight:700; margin-bottom:10px;">Consignación ${index + 1}</div>
           <div class="support-grid">
-            <div><div class="support-label">Banco</div><div class="support-value">${escapeHtml(cuentaConsignacion?.banco || consignacion.otraCuenta?.banco || 'N/A')}</div></div>
-            <div><div class="support-label">Número de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A')}</div></div>
-            <div><div class="support-label">Tipo de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A')}</div></div>
-            <div><div class="support-label">Titular</div><div class="support-value">${escapeHtml(cuentaConsignacion?.titular || consignacion.otraCuenta?.titular || 'N/A')}</div></div>
+            <div><div class="support-label">Banco</div><div class="support-value">${escapeHtml(cuentaConsignacion?.banco || consignacion.banco || consignacion.otraCuenta?.banco || 'N/A')}</div></div>
+            <div><div class="support-label">Número de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.numeroCuenta || consignacion.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A')}</div></div>
+            <div><div class="support-label">Tipo de Cuenta</div><div class="support-value">${escapeHtml(cuentaConsignacion?.tipoCuenta || consignacion.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A')}</div></div>
+            <div><div class="support-label">Titular</div><div class="support-value">${escapeHtml(cuentaConsignacion?.titular || consignacion.titular || consignacion.otraCuenta?.titular || 'N/A')}</div></div>
             <div><div class="support-label">Valor Informado</div><div class="support-value">${escapeHtml(formatCOP(Number(consignacion.valor) || 0))}</div></div>
           </div>
         </div>`;
@@ -1442,25 +1442,25 @@ export default function CuadreDetalle() {
                             <div>
                               <p className="text-sm text-gray-600">Banco</p>
                               <p className="text-base font-semibold text-gray-900">
-                                {cuentaConsignacion?.banco || consignacion.otraCuenta?.banco || 'N/A'}
+                                {cuentaConsignacion?.banco || consignacion.banco || consignacion.otraCuenta?.banco || 'N/A'}
                               </p>
                             </div>
                             <div>
                               <p className="text-sm text-gray-600">Número de Cuenta</p>
                               <p className="text-base font-semibold text-gray-900">
-                                {cuentaConsignacion?.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A'}
+                                {cuentaConsignacion?.numeroCuenta || consignacion.numeroCuenta || consignacion.otraCuenta?.numeroCuenta || 'N/A'}
                               </p>
                             </div>
                             <div>
                               <p className="text-sm text-gray-600">Tipo de Cuenta</p>
                               <p className="text-base font-semibold text-gray-900">
-                                {cuentaConsignacion?.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A'}
+                                {cuentaConsignacion?.tipoCuenta || consignacion.tipoCuenta || consignacion.otraCuenta?.tipoCuenta || 'N/A'}
                               </p>
                             </div>
                             <div>
                               <p className="text-sm text-gray-600">Titular</p>
                               <p className="text-base font-semibold text-gray-900">
-                                {cuentaConsignacion?.titular || consignacion.otraCuenta?.titular || 'N/A'}
+                                {cuentaConsignacion?.titular || consignacion.titular || consignacion.otraCuenta?.titular || 'N/A'}
                               </p>
                             </div>
                             <div>

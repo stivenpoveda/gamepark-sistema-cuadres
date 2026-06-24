@@ -270,7 +270,6 @@ export default function ReportesAdminBancosPage() {
               <option value="egreso">Egreso</option>
               <option value="transferencia_entrada">Transferencia Entrada</option>
               <option value="transferencia_salida">Transferencia Salida</option>
-              <option value="cuadre_aprobado">Cuadre Aprobado</option>
             </select>
           </FilterField>
         </div>
