@@ -17,6 +17,7 @@ export async function POST(request: Request) {
       valor: Number(body.valor || 0),
       descripcion: body.descripcion,
       fechaMovimiento: body.fechaMovimiento,
+      idempotencyKey: body.idempotencyKey || null,
     });
 
     return NextResponse.json({ success: true, transfer });

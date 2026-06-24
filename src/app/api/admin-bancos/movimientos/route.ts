@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       origen: 'manual',
       metadata: {
         source: 'admin-bancos-ui',
+        idempotency_key: body.idempotencyKey || null,
       },
     });
 

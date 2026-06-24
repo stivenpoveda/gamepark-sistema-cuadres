@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
@@ -9,6 +9,7 @@ import { formatCOP, formatDate } from '@/lib/utils';
 
 export default function TransferenciasAdminBancosPage() {
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [cuentas, setCuentas] = useState<CuentaFinanciera[]>([]);
   const [movimientos, setMovimientos] = useState<MovimientoFinanciero[]>([]);
   const [form, setForm] = useState({
@@ -22,6 +23,7 @@ export default function TransferenciasAdminBancosPage() {
     descripcion: '',
     fechaMovimiento: new Date().toISOString().split('T')[0],
   });
+  const submitLockRef = useRef(false);
 
   const fetchData = async () => {
     const [accountsRes, movementsRes] = await Promise.all([
@@ -88,6 +90,13 @@ export default function TransferenciasAdminBancosPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
+    setSubmitting(true);
+
     try {
       await authorizedJsonFetch('/api/admin-bancos/transferencias', {
         method: 'POST',
@@ -105,6 +114,7 @@ export default function TransferenciasAdminBancosPage() {
           valor: form.valor,
           descripcion: form.descripcion,
           fechaMovimiento: form.fechaMovimiento,
+          idempotencyKey: crypto.randomUUID(),
         }),
       });
       toast.success('Transferencia registrada');
@@ -122,6 +132,9 @@ export default function TransferenciasAdminBancosPage() {
       await fetchData();
     } catch (error: any) {
       toast.error(error?.message || 'No se pudo registrar la transferencia');
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -189,8 +202,12 @@ export default function TransferenciasAdminBancosPage() {
             <Field label="Valor">
               <input type="number" value={form.valor || ''} onChange={(e) => setForm({ ...form, valor: Number(e.target.value || 0) })} required className="w-full px-4 py-3 border border-gray-300 rounded-lg" />
             </Field>
-            <button type="submit" className="w-full px-4 py-3 bg-primary text-white rounded-lg">
-              Registrar Transferencia
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full px-4 py-3 bg-primary text-white rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting ? 'Registrando...' : 'Registrar Transferencia'}
             </button>
           </form>
         </div>

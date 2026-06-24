@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import UploadFoto from '@/components/UploadFoto';
@@ -17,6 +17,7 @@ import type { PuntoDeVenta } from '@/types';
 
 export default function MovimientosAdminBancosPage() {
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [cuentas, setCuentas] = useState<CuentaFinanciera[]>([]);
   const [categorias, setCategorias] = useState<CategoriaFinanciera[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
@@ -37,6 +38,7 @@ export default function MovimientosAdminBancosPage() {
     cuentaId: '',
     categoriaId: '',
   });
+  const submitLockRef = useRef(false);
 
   const fetchData = async () => {
     const [accountsRes, categoriesRes, pdvRes, movementsRes] = await Promise.all([
@@ -79,10 +81,20 @@ export default function MovimientosAdminBancosPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
+    setSubmitting(true);
+
     try {
       await authorizedJsonFetch('/api/admin-bancos/movimientos', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          idempotencyKey: crypto.randomUUID(),
+        }),
       });
 
       toast.success('Movimiento registrado');
@@ -100,6 +112,9 @@ export default function MovimientosAdminBancosPage() {
       await fetchData();
     } catch (error: any) {
       toast.error(error?.message || 'No se pudo crear el movimiento');
+    } finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -172,8 +187,12 @@ export default function MovimientosAdminBancosPage() {
                 onRemove={() => setForm({ ...form, soporteUrl: '' })}
               />
             </Field>
-            <button type="submit" className="w-full px-4 py-3 bg-primary text-white rounded-lg">
-              Registrar Movimiento
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full px-4 py-3 bg-primary text-white rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting ? 'Registrando...' : 'Registrar Movimiento'}
             </button>
           </form>
         </div>

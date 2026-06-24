@@ -327,6 +327,23 @@ export async function ensureFinancialBaseData(actor: Usuario) {
 }
 
 export async function createFinancialMovement(actor: Usuario, input: CreateMovementInput) {
+  const idempotencyKey = String(
+    (input.metadata as Record<string, unknown> | null)?.idempotency_key || ''
+  ).trim();
+
+  if (idempotencyKey) {
+    const { data: existingMovement } = await supabaseServer
+      .from('movimientos_financieros')
+      .select(ACTIVE_MOVEMENTS_SELECT)
+      .eq('activo', true)
+      .eq('metadata->>idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (existingMovement) {
+      return existingMovement as MovimientoFinanciero;
+    }
+  }
+
   const payload = {
     cuenta_id: input.cuentaId,
     tipo_movimiento: input.tipoMovimiento,
@@ -653,6 +670,7 @@ export async function createTransferBetweenAccounts(
     valor: number;
     descripcion: string;
     fechaMovimiento: string;
+    idempotencyKey?: string | null;
   }
 ) {
   if (!input.cuentaDestinoId && !input.cuentaExterna?.numeroCuenta) {
@@ -666,6 +684,31 @@ export async function createTransferBetweenAccounts(
   const valor = Number(input.valor || 0);
   if (valor <= 0) {
     throw new Error('El valor de la transferencia debe ser mayor a cero');
+  }
+
+  const idempotencyKey = String(input.idempotencyKey || '').trim();
+  if (idempotencyKey) {
+    const { data: existingMovements } = await supabaseServer
+      .from('movimientos_financieros')
+      .select(ACTIVE_MOVEMENTS_SELECT)
+      .eq('activo', true)
+      .eq('metadata->>idempotency_key', idempotencyKey)
+      .order('created_at', { ascending: true });
+
+    const salidaExistente =
+      (existingMovements || []).find((movement) => movement.tipo_movimiento === 'transferencia_salida') ||
+      null;
+    const entradaExistente =
+      (existingMovements || []).find((movement) => movement.tipo_movimiento === 'transferencia_entrada') ||
+      null;
+
+    if (salidaExistente) {
+      return {
+        transferenciaGrupoId: salidaExistente.transferencia_grupo_id || entradaExistente?.transferencia_grupo_id || null,
+        salida: salidaExistente as MovimientoFinanciero,
+        entrada: (entradaExistente as MovimientoFinanciero | null) || null,
+      };
+    }
   }
 
   const transferenciaGrupoId = crypto.randomUUID();
@@ -683,6 +726,7 @@ export async function createTransferBetweenAccounts(
     metadata: {
       direccion: 'salida',
       cuenta_externa: externalAccount,
+      idempotency_key: idempotencyKey || null,
     },
   });
 
@@ -705,6 +749,7 @@ export async function createTransferBetweenAccounts(
     origen: 'transferencia',
     metadata: {
       direccion: 'entrada',
+      idempotency_key: idempotencyKey || null,
     },
   });
 
