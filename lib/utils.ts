@@ -378,6 +378,7 @@ export const getCuadreConsignacionesRegistrables = (input: {
   url_foto_consignacion?: string | null;
   valor_consignado?: number | string | null;
 }) => {
+  const metadata = parseConsignacionMetadata(input.firma_cajero_url);
   const soportes = getConsignacionSoportes({
     url_foto_consignacion: input.url_foto_consignacion,
     firma_cajero_url: input.firma_cajero_url,
@@ -419,6 +420,47 @@ export const getCuadreConsignacionesRegistrables = (input: {
   const valorLegacy = Number(input.valor_consignado || 0);
   if (valorLegacy <= 0) {
     return [];
+  }
+
+  const cuentaMetadataId = metadata?.cuentaId || undefined;
+  const cuentaMetadata = getCuentaConsignacionById(cuentaMetadataId);
+  const bancoMetadata =
+    cuentaMetadata?.banco || metadata?.otraCuenta?.banco || metadata?.banco || '';
+  const tipoCuentaMetadata =
+    cuentaMetadata?.tipoCuenta || metadata?.otraCuenta?.tipoCuenta || metadata?.tipoCuenta || '';
+  const numeroCuentaMetadata =
+    cuentaMetadata?.numeroCuenta ||
+    metadata?.otraCuenta?.numeroCuenta ||
+    metadata?.numeroCuenta ||
+    '';
+  const titularMetadata =
+    cuentaMetadata?.titular || metadata?.titular || metadata?.otraCuenta?.titular || '';
+
+  if (
+    cuentaMetadataId ||
+    bancoMetadata ||
+    tipoCuentaMetadata ||
+    numeroCuentaMetadata ||
+    titularMetadata
+  ) {
+    return [
+      {
+        id: 'consignacion-principal',
+        valor: valorLegacy,
+        cuentaId: cuentaMetadataId,
+        banco: bancoMetadata,
+        tipoCuenta: tipoCuentaMetadata,
+        numeroCuenta: numeroCuentaMetadata,
+        titular: titularMetadata,
+        fotoUrl: input.url_foto_consignacion || '',
+        otraCuenta: cuentaMetadataId === 'otra' ? metadata?.otraCuenta || null : null,
+        descripcionCuenta:
+          [bancoMetadata, tipoCuentaMetadata, numeroCuentaMetadata].filter(Boolean).join(' ').trim() ||
+          'Cuenta por definir',
+        isLegacy: false,
+        isInformative: cuentaMetadataId === 'otra',
+      } satisfies CuadreConsignacionRegistrable,
+    ];
   }
 
   return [
