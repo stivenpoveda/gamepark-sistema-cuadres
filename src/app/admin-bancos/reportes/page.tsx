@@ -95,8 +95,33 @@ export default function ReportesAdminBancosPage() {
     [puntosVenta]
   );
 
+  const informativeOnlyCuadreIds = useMemo(() => {
+    const ids = new Set<string>();
+
+    cuadresAprobados.forEach((cuadre) => {
+      const consignaciones = getCuadreConsignacionesRegistrables({
+        firma_cajero_url: cuadre.firma_cajero_url,
+        url_foto_consignacion: cuadre.url_foto_consignacion,
+        valor_consignado: cuadre.valor_consignado,
+      });
+
+      if (consignaciones.length > 0 && consignaciones.every((consignacion) => consignacion.isInformative)) {
+        ids.add(cuadre.id);
+      }
+    });
+
+    return ids;
+  }, [cuadresAprobados]);
+
   const filteredMovements = useMemo(() => {
     return movimientos.filter((movement) => {
+      if (
+        movement.tipo_movimiento === 'cuadre_aprobado' &&
+        movement.cuadre_id &&
+        informativeOnlyCuadreIds.has(movement.cuadre_id)
+      ) {
+        return false;
+      }
       if (filters.fechaInicio && movement.fecha_movimiento < filters.fechaInicio) return false;
       if (filters.fechaFin && movement.fecha_movimiento > filters.fechaFin) return false;
       if (filters.cuentaId && movement.cuenta_id !== filters.cuentaId) return false;
@@ -112,7 +137,7 @@ export default function ReportesAdminBancosPage() {
       }
       return true;
     });
-  }, [filters, movimientos, puntosVenta]);
+  }, [filters, movimientos, puntosVenta, informativeOnlyCuadreIds]);
 
   const reportRows = useMemo(
     () =>
