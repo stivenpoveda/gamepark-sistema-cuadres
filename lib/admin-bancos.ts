@@ -169,12 +169,40 @@ export const isMovementExpense = (type: MovementType) =>
 export const getMovementSignedValue = (movement: Pick<MovimientoFinanciero, 'tipo_movimiento' | 'valor'>) =>
   isMovementIncome(movement.tipo_movimiento) ? Number(movement.valor || 0) : -Number(movement.valor || 0);
 
+export const getEffectiveFinancialMovements = (movements: MovimientoFinanciero[]) => {
+  const cuadreWithOfficialMovement = new Set(
+    movements
+      .filter(
+        (movement) =>
+          movement.activo !== false &&
+          movement.tipo_movimiento === 'cuadre_aprobado' &&
+          movement.origen !== 'historico' &&
+          Boolean(movement.cuadre_id)
+      )
+      .map((movement) => movement.cuadre_id as string)
+  );
+
+  return movements.filter((movement) => {
+    if (
+      movement.activo !== false &&
+      movement.tipo_movimiento === 'cuadre_aprobado' &&
+      movement.origen === 'historico' &&
+      movement.cuadre_id &&
+      cuadreWithOfficialMovement.has(movement.cuadre_id)
+    ) {
+      return false;
+    }
+
+    return movement.activo !== false;
+  });
+};
+
 export const buildLedgerRows = (
   account: Pick<CuentaFinanciera, 'id' | 'saldo_inicial'>,
   movements: MovimientoFinanciero[]
 ) => {
-  const rows = movements
-    .filter((movement) => movement.activo !== false && movement.cuenta_id === account.id)
+  const rows = getEffectiveFinancialMovements(movements)
+    .filter((movement) => movement.cuenta_id === account.id)
     .sort((a, b) => {
       const dateA = `${a.fecha_movimiento}T${a.created_at || ''}`;
       const dateB = `${b.fecha_movimiento}T${b.created_at || ''}`;
@@ -219,8 +247,7 @@ export const getCurrentMonthRange = () => {
 export const groupMovementsByMonth = (movements: MovimientoFinanciero[]) => {
   const map = new Map<string, { month: string; ingresos: number; egresos: number; neto: number }>();
 
-  movements
-    .filter((movement) => movement.activo !== false)
+  getEffectiveFinancialMovements(movements)
     .forEach((movement) => {
       const month = getMonthKey(movement.fecha_movimiento);
       const entry = map.get(month) || { month, ingresos: 0, egresos: 0, neto: 0 };
@@ -247,8 +274,8 @@ export const getTopExpensesByCategory = (
   const categoryMap = new Map(categories.map((category) => [category.id, category.nombre]));
   const totals = new Map<string, number>();
 
-  movements
-    .filter((movement) => movement.activo !== false && isMovementExpense(movement.tipo_movimiento))
+  getEffectiveFinancialMovements(movements)
+    .filter((movement) => isMovementExpense(movement.tipo_movimiento))
     .forEach((movement) => {
       const categoryName = categoryMap.get(movement.categoria_id || '') || 'Sin categoria';
       totals.set(categoryName, (totals.get(categoryName) || 0) + Number(movement.valor || 0));
@@ -267,8 +294,8 @@ export const getTopIncomeByPdv = (
   const pdvMap = new Map(puntosDeVenta.map((item) => [item.id, item.nombre]));
   const totals = new Map<string, number>();
 
-  movements
-    .filter((movement) => movement.activo !== false && isMovementIncome(movement.tipo_movimiento))
+  getEffectiveFinancialMovements(movements)
+    .filter((movement) => isMovementIncome(movement.tipo_movimiento))
     .forEach((movement) => {
       const pdvName = pdvMap.get(movement.pdv_id || '') || 'Sin PDV';
       totals.set(pdvName, (totals.get(pdvName) || 0) + Number(movement.valor || 0));
@@ -285,12 +312,12 @@ export const buildFinancialSummary = (
   movements: MovimientoFinanciero[]
 ): FinancialSummary => {
   const currentMonth = getCurrentMonthRange();
+  const effectiveMovements = getEffectiveFinancialMovements(movements);
 
-  const saldoTotal = accounts.reduce((sum, account) => sum + getAccountBalance(account, movements), 0);
+  const saldoTotal = accounts.reduce((sum, account) => sum + getAccountBalance(account, effectiveMovements), 0);
 
-  const monthlyMovements = movements.filter(
+  const monthlyMovements = effectiveMovements.filter(
     (movement) =>
-      movement.activo !== false &&
       movement.fecha_movimiento >= currentMonth.start &&
       movement.fecha_movimiento <= currentMonth.end
   );

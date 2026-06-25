@@ -10,6 +10,7 @@ import {
   CuentaFinanciera,
   formatMovementOriginLabel,
   formatMovementTypeLabel,
+  getEffectiveFinancialMovements,
   getCurrentMonthRange,
   isAutomaticBookMovement,
   isManualBookMovement,
@@ -82,7 +83,9 @@ export default function ReportesAdminBancosPage() {
       setCuentas((accountsRes.data || []) as CuentaFinanciera[]);
       setCategorias((categoriesRes.data || []) as CategoriaFinanciera[]);
       setPuntosVenta((pdvRes.data || []) as PuntoDeVenta[]);
-      setMovimientos((movementsRes.data || []) as MovimientoFinanciero[]);
+      setMovimientos(
+        getEffectiveFinancialMovements((movementsRes.data || []) as MovimientoFinanciero[])
+      );
       setCuadresAprobados((cuadresRes.data || []) as CuadreAprobadoReporte[]);
       setLoading(false);
     };

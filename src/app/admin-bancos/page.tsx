@@ -23,6 +23,7 @@ import {
   CuentaFinanciera,
   CategoriaFinanciera,
   getAccountBalance,
+  getEffectiveFinancialMovements,
   getFinancialAccountTitular,
   getTopExpensesByCategory,
   getTopIncomeByPdv,
@@ -72,7 +73,9 @@ export default function AdminBancosDashboardPage() {
       ]);
 
       setCuentas((accountsRes.data || []) as CuentaFinanciera[]);
-      setMovimientos((movementsRes.data || []) as MovimientoFinanciero[]);
+      setMovimientos(
+        getEffectiveFinancialMovements((movementsRes.data || []) as MovimientoFinanciero[])
+      );
       setCategorias((categoriesRes.data || []) as CategoriaFinanciera[]);
       setPuntosVenta((pdvRes.data || []) as PuntoDeVenta[]);
       setCuadres((cuadresRes.data || []) as CuadreSyncResumen[]);

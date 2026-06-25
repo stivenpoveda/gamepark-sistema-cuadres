@@ -12,6 +12,7 @@ import {
   CuentaFinanciera,
   formatMovementOriginLabel,
   formatMovementTypeLabel,
+  getEffectiveFinancialMovements,
   isAutomaticBookMovement,
   isManualBookMovement,
   MovimientoFinanciero,
@@ -101,7 +102,9 @@ export default function MovimientosAdminBancosPage() {
     setCuentas(nextAccounts);
     setCategorias((categoriesRes.data || []) as CategoriaFinanciera[]);
     setPuntosVenta((pdvRes.data || []) as PuntoDeVenta[]);
-    setMovimientos((movementsRes.data || []) as MovimientoFinanciero[]);
+    setMovimientos(
+      getEffectiveFinancialMovements((movementsRes.data || []) as MovimientoFinanciero[])
+    );
     setCuadresAprobados((cuadresRes.data || []) as CuadreAprobadoReporte[]);
     setForm((current) => ({
       ...current,
