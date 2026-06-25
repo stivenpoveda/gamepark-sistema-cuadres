@@ -896,6 +896,38 @@ export async function deleteCuadreWithFinancialCleanup(actor: Usuario, cuadreId:
     await softDeleteFinancialMovement(actor, movement.id);
   }
 
+  const { data: relatedMovements, error: relatedMovementsError } = await supabaseServer
+    .from('movimientos_financieros')
+    .select('id,metadata')
+    .eq('cuadre_id', cuadreId);
+
+  if (relatedMovementsError) {
+    throw relatedMovementsError;
+  }
+
+  for (const movement of relatedMovements || []) {
+    const metadata = (movement.metadata as Record<string, unknown> | null) || {};
+    const nextMetadata = {
+      ...metadata,
+      deleted_cuadre_id: cuadreId,
+      deleted_cuadre_at: new Date().toISOString(),
+    };
+
+    const { error: releaseCuadreError } = await supabaseServer
+      .from('movimientos_financieros')
+      .update({
+        cuadre_id: null,
+        metadata: nextMetadata,
+        updated_by: actor.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', movement.id);
+
+    if (releaseCuadreError) {
+      throw releaseCuadreError;
+    }
+  }
+
   const [{ error: denominacionesError }, { error: gastosError }, { error: turnerosError }] =
     await Promise.all([
       supabaseServer.from('denominaciones_cuadre').delete().eq('cuadre_id', cuadreId),
