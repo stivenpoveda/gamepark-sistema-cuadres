@@ -871,6 +871,56 @@ export async function softDeleteFinancialMovement(actor: Usuario, movementId: st
   return true;
 }
 
+export async function deleteCuadreWithFinancialCleanup(actor: Usuario, cuadreId: string) {
+  const { data: cuadre, error: cuadreError } = await supabaseServer
+    .from('cuadres_diarios')
+    .select('id')
+    .eq('id', cuadreId)
+    .single();
+
+  if (cuadreError || !cuadre) {
+    throw new Error('No se encontro el cuadre a eliminar');
+  }
+
+  const { data: activeMovements, error: movementsError } = await supabaseServer
+    .from('movimientos_financieros')
+    .select('id')
+    .eq('cuadre_id', cuadreId)
+    .eq('activo', true);
+
+  if (movementsError) {
+    throw movementsError;
+  }
+
+  for (const movement of activeMovements || []) {
+    await softDeleteFinancialMovement(actor, movement.id);
+  }
+
+  const [{ error: denominacionesError }, { error: gastosError }, { error: turnerosError }] =
+    await Promise.all([
+      supabaseServer.from('denominaciones_cuadre').delete().eq('cuadre_id', cuadreId),
+      supabaseServer.from('gastos_diarios').delete().eq('cuadre_id', cuadreId),
+      supabaseServer.from('pagos_turneros').delete().eq('cuadre_id', cuadreId),
+    ]);
+
+  if (denominacionesError) throw denominacionesError;
+  if (gastosError) throw gastosError;
+  if (turnerosError) throw turnerosError;
+
+  const { error: deleteCuadreError } = await supabaseServer
+    .from('cuadres_diarios')
+    .delete()
+    .eq('id', cuadreId);
+
+  if (deleteCuadreError) {
+    throw deleteCuadreError;
+  }
+
+  return {
+    deletedFinancialMovements: (activeMovements || []).length,
+  };
+}
+
 export async function upsertFinancialCategory(
   actor: Usuario,
   input: {

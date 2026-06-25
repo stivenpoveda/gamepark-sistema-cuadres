@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { authorizedJsonFetch } from '@/lib/admin-bancos';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
 import { Loader2, LogOut, Plus, FileText, Calendar, Trash2, Menu, X } from 'lucide-react';
@@ -152,21 +153,23 @@ export default function AdminDashboard() {
     
     setDeleting(cuadreId);
     try {
-      // First delete related records
-      await Promise.all([
-        supabase.from('denominaciones_cuadre').delete().eq('cuadre_id', cuadreId),
-        supabase.from('gastos_diarios').delete().eq('cuadre_id', cuadreId),
-        supabase.from('pagos_turneros').delete().eq('cuadre_id', cuadreId),
-      ]);
-      
-      // Then delete the cuadre
-      await supabase.from('cuadres_diarios').delete().eq('id', cuadreId);
+      const response = await authorizedJsonFetch<{
+        success: boolean;
+        result?: { deletedFinancialMovements: number };
+      }>('/api/cuadres/eliminar', {
+        method: 'DELETE',
+        body: JSON.stringify({ cuadreId }),
+      });
       
       setCuadres(prev => prev.filter(c => c.id !== cuadreId));
-      toast.success('Cuadre eliminado exitosamente');
-    } catch (error) {
+      toast.success(
+        response.result?.deletedFinancialMovements
+          ? `Cuadre eliminado y se reversaron ${response.result.deletedFinancialMovements} movimientos de Admin Bancos`
+          : 'Cuadre eliminado exitosamente'
+      );
+    } catch (error: any) {
       console.error('Error deleting cuadre:', error);
-      toast.error('Error al eliminar el cuadre');
+      toast.error(error?.message || 'Error al eliminar el cuadre');
     } finally {
       setDeleting(null);
     }
