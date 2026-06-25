@@ -182,6 +182,20 @@ export const getEffectiveFinancialMovements = (movements: MovimientoFinanciero[]
       .map((movement) => movement.cuadre_id as string)
   );
 
+  const cuadreWithSpecificConsignacion = new Set(
+    movements
+      .filter(
+        (movement) =>
+          movement.activo !== false &&
+          movement.tipo_movimiento === 'cuadre_aprobado' &&
+          Boolean(movement.cuadre_id) &&
+          String((movement.metadata as Record<string, unknown> | null)?.consignacion_id || '') !==
+            'consignacion-total' &&
+          Boolean(String((movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''))
+      )
+      .map((movement) => movement.cuadre_id as string)
+  );
+
   return movements.filter((movement) => {
     if (
       movement.activo !== false &&
@@ -189,6 +203,17 @@ export const getEffectiveFinancialMovements = (movements: MovimientoFinanciero[]
       movement.origen === 'historico' &&
       movement.cuadre_id &&
       cuadreWithOfficialMovement.has(movement.cuadre_id)
+    ) {
+      return false;
+    }
+
+    if (
+      movement.activo !== false &&
+      movement.tipo_movimiento === 'cuadre_aprobado' &&
+      movement.cuadre_id &&
+      String((movement.metadata as Record<string, unknown> | null)?.consignacion_id || '') ===
+        'consignacion-total' &&
+      cuadreWithSpecificConsignacion.has(movement.cuadre_id)
     ) {
       return false;
     }
