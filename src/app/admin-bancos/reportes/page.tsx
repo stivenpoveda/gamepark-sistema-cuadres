@@ -13,6 +13,7 @@ import {
   getEffectiveFinancialMovements,
   getCurrentMonthRange,
   isAutomaticBookMovement,
+  isConsignacionMovement,
   isDatafonoMovement,
   isManualBookMovement,
   isMovementIncome,
@@ -40,6 +41,20 @@ type InformativeReportRow = {
   titular: string;
   descripcion: string;
   valor: number;
+};
+
+type LedgerReportRow = {
+  fecha: string;
+  tipo: string;
+  origen: string;
+  cuenta: string;
+  ciudad: string;
+  pdv: string;
+  categoria: string;
+  descripcion: string;
+  valor: number;
+  tipoMovimiento: MovimientoFinanciero['tipo_movimiento'];
+  entryKind: 'consignacion' | 'datafono' | 'otro';
 };
 
 type ReportView = 'todos' | 'libro' | 'manual' | 'automatico' | 'informativo';
@@ -155,7 +170,7 @@ export default function ReportesAdminBancosPage() {
 
   const reportRows = useMemo(
     () =>
-      filteredMovements.map((movement) => ({
+      filteredMovements.map((movement): LedgerReportRow => ({
         fecha: movement.fecha_movimiento,
         tipo: formatMovementDisplayTypeLabel(movement),
         origen: formatMovementOriginLabel(movement.origen),
@@ -166,19 +181,38 @@ export default function ReportesAdminBancosPage() {
         descripcion: movement.descripcion,
         valor: Number(movement.valor || 0),
         tipoMovimiento: movement.tipo_movimiento,
+        entryKind: isDatafonoMovement(movement)
+          ? 'datafono'
+          : isConsignacionMovement(movement)
+            ? 'consignacion'
+            : 'otro',
       })),
     [filteredMovements, cuentas, puntosVenta, categorias]
   );
 
-  const totals = useMemo(
+  const ledgerTotals = useMemo(
     () =>
       reportRows.reduce(
         (acc, row) => {
-          if (isMovementIncome(row.tipoMovimiento)) acc.ingresos += row.valor;
-          else acc.egresos += row.valor;
+          if (!isMovementIncome(row.tipoMovimiento)) {
+            acc.egresos += row.valor;
+            return acc;
+          }
+
+          if (row.entryKind === 'consignacion') {
+            acc.consignaciones += row.valor;
+            return acc;
+          }
+
+          if (row.entryKind === 'datafono') {
+            acc.datafono += row.valor;
+            return acc;
+          }
+
+          acc.otrosIngresos += row.valor;
           return acc;
         },
-        { ingresos: 0, egresos: 0 }
+        { consignaciones: 0, datafono: 0, otrosIngresos: 0, egresos: 0 }
       ),
     [reportRows]
   );
@@ -230,14 +264,6 @@ export default function ReportesAdminBancosPage() {
     [informativeRows]
   );
 
-  const datafonoTotal = useMemo(
-    () =>
-      filteredMovements
-        .filter((movement) => isDatafonoMovement(movement))
-        .reduce((sum, movement) => sum + Number(movement.valor || 0), 0),
-    [filteredMovements]
-  );
-
   const showLedgerSection =
     filters.vistaReporte === 'todos' ||
     filters.vistaReporte === 'libro' ||
@@ -249,22 +275,34 @@ export default function ReportesAdminBancosPage() {
 
   const exportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
+    const buildLedgerSheet = (title: string, rows: LedgerReportRow[]) => {
+      const sheet = workbook.addWorksheet(title);
+      sheet.columns = [
+        { header: 'Fecha', key: 'fecha', width: 14 },
+        { header: 'Tipo', key: 'tipo', width: 22 },
+        { header: 'Origen', key: 'origen', width: 18 },
+        { header: 'Cuenta', key: 'cuenta', width: 28 },
+        { header: 'Ciudad', key: 'ciudad', width: 18 },
+        { header: 'Punto de Venta', key: 'pdv', width: 28 },
+        { header: 'Categoria', key: 'categoria', width: 20 },
+        { header: 'Descripcion', key: 'descripcion', width: 42 },
+        { header: 'Valor', key: 'valor', width: 16 },
+      ];
 
-    const ledgerSheet = workbook.addWorksheet('Libro Bancario');
-    ledgerSheet.columns = [
-      { header: 'Fecha', key: 'fecha', width: 14 },
-      { header: 'Tipo', key: 'tipo', width: 22 },
-      { header: 'Origen', key: 'origen', width: 18 },
-      { header: 'Cuenta', key: 'cuenta', width: 28 },
-      { header: 'Ciudad', key: 'ciudad', width: 18 },
-      { header: 'Punto de Venta', key: 'pdv', width: 28 },
-      { header: 'Categoria', key: 'categoria', width: 20 },
-      { header: 'Descripcion', key: 'descripcion', width: 42 },
-      { header: 'Valor', key: 'valor', width: 16 },
-    ];
+      rows.forEach((row) => sheet.addRow(row));
+      sheet.getColumn('valor').numFmt = '"$"#,##0';
+      return sheet;
+    };
 
-    reportRows.forEach((row) => ledgerSheet.addRow(row));
-    ledgerSheet.getColumn('valor').numFmt = '"$"#,##0';
+    buildLedgerSheet('Libro Bancario', reportRows);
+    buildLedgerSheet(
+      'Consignaciones Libro',
+      reportRows.filter((row) => row.entryKind === 'consignacion')
+    );
+    buildLedgerSheet(
+      'Ingresos Datafono',
+      reportRows.filter((row) => row.entryKind === 'datafono')
+    );
 
     const informativeSheet = workbook.addWorksheet('Ctas No Registradas');
     informativeSheet.columns = [
@@ -322,9 +360,10 @@ export default function ReportesAdminBancosPage() {
     <h1>Reporte Admin Bancos</h1>
     <p>Rango: ${filters.fechaInicio || 'N/A'} a ${filters.fechaFin || 'N/A'}</p>
     <div class="summary">
-      <div class="card"><div class="label">Ingresos Libro</div><div class="value">${formatCOP(totals.ingresos)}</div></div>
-      <div class="card"><div class="label">Egresos Libro</div><div class="value">${formatCOP(totals.egresos)}</div></div>
-      <div class="card"><div class="label">Ingresos Datafono</div><div class="value">${formatCOP(datafonoTotal)}</div></div>
+      <div class="card"><div class="label">Ingresos Consignaciones</div><div class="value">${formatCOP(ledgerTotals.consignaciones)}</div></div>
+      <div class="card"><div class="label">Ingresos Datafono</div><div class="value">${formatCOP(ledgerTotals.datafono)}</div></div>
+      <div class="card"><div class="label">Otros Ingresos Libro</div><div class="value">${formatCOP(ledgerTotals.otrosIngresos)}</div></div>
+      <div class="card"><div class="label">Egresos Libro</div><div class="value">${formatCOP(ledgerTotals.egresos)}</div></div>
       <div class="card"><div class="label">Ctas No Registradas</div><div class="value">${formatCOP(informativeTotals.total)}</div></div>
     </div>
 
@@ -568,9 +607,10 @@ export default function ReportesAdminBancosPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <ReportMetric label="Ingresos Libro" value={formatCOP(totals.ingresos)} />
-        <ReportMetric label="Egresos Libro" value={formatCOP(totals.egresos)} />
-        <ReportMetric label="Ingresos Datafono" value={formatCOP(datafonoTotal)} />
+        <ReportMetric label="Ingresos Consignaciones" value={formatCOP(ledgerTotals.consignaciones)} />
+        <ReportMetric label="Ingresos Datafono" value={formatCOP(ledgerTotals.datafono)} />
+        <ReportMetric label="Otros Ingresos Libro" value={formatCOP(ledgerTotals.otrosIngresos)} />
+        <ReportMetric label="Egresos Libro" value={formatCOP(ledgerTotals.egresos)} />
         <ReportMetric label="Ctas No Registradas" value={formatCOP(informativeTotals.total)} />
       </div>
 
@@ -579,7 +619,7 @@ export default function ReportesAdminBancosPage() {
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Reporte del Libro Bancario</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Este bloque separa pagos y movimientos manuales de los ingresos o procesos automaticos.
+            Este bloque mantiene separado el ingreso por consignaciones del ingreso por datafono para facilitar el cruce.
           </p>
         </div>
         <table className="w-full min-w-[1220px] table-fixed">
