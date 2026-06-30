@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { canManageSuperadminCatalogs, isAccountingRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate, getConsignacionSoportes, getCuentaConsignacionById, getGastoCategoriaLabel, parseConsignacionMetadata } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getConsignacionSoportes, getCuentaConsignacionById, getCuadreConsignacionesRegistrables, getGastoCategoriaLabel, parseConsignacionMetadata } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, PuntoDeVenta, Usuario } from '@/types';
@@ -56,6 +56,29 @@ const resolveConsignacionSupportValues = (
   }
 
   return valores;
+};
+
+const getComparableConsignacionTotal = (cuadre: {
+  consigna_hoy?: boolean | null;
+  firma_cajero_url?: string | null;
+  url_foto_consignacion?: string | null;
+  valor_consignado?: number | string | null;
+}) => {
+  if ((cuadre.consigna_hoy ?? true) === false) {
+    return 0;
+  }
+
+  const consignaciones = getCuadreConsignacionesRegistrables({
+    firma_cajero_url: cuadre.firma_cajero_url,
+    url_foto_consignacion: cuadre.url_foto_consignacion,
+    valor_consignado: cuadre.valor_consignado,
+  });
+
+  if (consignaciones.length > 0) {
+    return consignaciones.reduce((sum, consignacion) => sum + Number(consignacion.valor || 0), 0);
+  }
+
+  return Number(cuadre.valor_consignado) || 0;
 };
 
 export default function SuperadminReportesPage() {
@@ -168,8 +191,7 @@ export default function SuperadminReportesPage() {
         context: 'final',
       });
 
-      const consignaHoy = (c.consigna_hoy ?? true) === true;
-      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+      const consignaciones = getComparableConsignacionTotal(c);
 
       acc.ventaTotal += Number(c.recaudo) || 0;
       acc.datafono += Number(c.venta_tarjetas) || 0;
@@ -245,7 +267,7 @@ export default function SuperadminReportesPage() {
         ventaTotal: Number(c.recaudo) || 0,
         valorGeneralAConsignar: Number(metrics.totalGeneralAConsignar) || 0,
         ventaDatafono: Number(c.venta_tarjetas) || 0,
-        valorConsignado: Number(c.valor_consignado) || 0,
+        valorConsignado: getComparableConsignacionTotal(c),
         deducciones: Number(gastos + turneros) || 0,
         pendiente: Number(c.consignacion_pendiente) || 0,
         totalFisico: Number(c.total_fisico) || 0,
@@ -606,8 +628,7 @@ export default function SuperadminReportesPage() {
         total_fisico: c.total_fisico,
         context: 'final',
       });
-      const consignaHoy = (c.consigna_hoy ?? true) === true;
-      const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+      const consignaciones = getComparableConsignacionTotal(c);
       const pendiente = Number(c.consignacion_pendiente) || 0;
 
       if (!acc[key]) {
@@ -936,7 +957,7 @@ export default function SuperadminReportesPage() {
                       <div>
                         <p className="text-gray-600">Consignaciones</p>
                         <p className="font-semibold text-gray-900">
-                          {formatCOP((cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0)}
+                          {formatCOP(getComparableConsignacionTotal(cuadre))}
                         </p>
                       </div>
                       <div className="col-span-2">
@@ -988,7 +1009,7 @@ export default function SuperadminReportesPage() {
                       total_fisico: cuadre.total_fisico,
                       context: 'final',
                     });
-                    const consignaciones = (cuadre.consigna_hoy ?? true) === false ? 0 : Number(cuadre.valor_consignado) || 0;
+                    const consignaciones = getComparableConsignacionTotal(cuadre);
 
                     return (
                       <tr key={cuadre.id} className="hover:bg-gray-50">
