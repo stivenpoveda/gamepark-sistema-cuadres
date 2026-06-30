@@ -600,7 +600,7 @@ export default function ReportesAdminBancosPage() {
               <option value="ingreso_datafono">Ingreso Datafono</option>
               <option value="transferencia_entrada">Transferencia Entrada</option>
               <option value="transferencia_salida">Transferencia Salida</option>
-              <option value="cuadre_aprobado">Ingreso por Cuadre</option>
+              <option value="cuadre_aprobado">Ingreso por Consignaciones</option>
             </select>
           </FilterField>
         </div>

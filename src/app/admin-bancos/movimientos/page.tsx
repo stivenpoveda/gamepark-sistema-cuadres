@@ -426,7 +426,7 @@ export default function MovimientosAdminBancosPage() {
                   <option value="ingreso_datafono">Ingreso Datafono</option>
                   <option value="transferencia_entrada">Transferencia Entrada</option>
                   <option value="transferencia_salida">Transferencia Salida</option>
-                  <option value="cuadre_aprobado">Cuadre Aprobado</option>
+                  <option value="cuadre_aprobado">Ingreso por Consignaciones</option>
                 </select>
               </Field>
               <Field label="Cuenta">

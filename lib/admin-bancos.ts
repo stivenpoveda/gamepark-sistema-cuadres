@@ -136,7 +136,7 @@ export const formatMovementTypeLabel = (type: MovementType) => {
     egreso: 'Egreso',
     transferencia_entrada: 'Transferencia Entrada',
     transferencia_salida: 'Transferencia Salida',
-    cuadre_aprobado: 'Ingreso por Cuadre',
+    cuadre_aprobado: 'Ingreso por Consignaciones',
   };
 
   return labels[type] || type;
