@@ -7,9 +7,26 @@ import { supabase } from '@/lib/supabase';
 import { authorizedJsonFetch, CuentaFinanciera, MovimientoFinanciero } from '@/lib/admin-bancos';
 import { formatCOP, formatDate } from '@/lib/utils';
 
+type TransferGroupRow = {
+  id: string;
+  fecha: string;
+  descripcion: string;
+  valor: number;
+  origen: string;
+  destino: string;
+  cuentaOrigenId: string;
+  destinoModo: 'interna' | 'externa';
+  cuentaDestinoId: string;
+  cuentaExternaBanco: string;
+  cuentaExternaNumero: string;
+  cuentaExternaTitular: string;
+};
+
 export default function TransferenciasAdminBancosPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [editingTransferId, setEditingTransferId] = useState('');
+  const [actionTransferId, setActionTransferId] = useState('');
   const [cuentas, setCuentas] = useState<CuentaFinanciera[]>([]);
   const [movimientos, setMovimientos] = useState<MovimientoFinanciero[]>([]);
   const [form, setForm] = useState({
@@ -24,6 +41,21 @@ export default function TransferenciasAdminBancosPage() {
     fechaMovimiento: new Date().toISOString().split('T')[0],
   });
   const submitLockRef = useRef(false);
+
+  const resetForm = (originId?: string, destinoId?: string) => {
+    setForm({
+      cuentaOrigenId: originId || cuentas[0]?.id || '',
+      destinoModo: 'interna',
+      cuentaDestinoId: destinoId || cuentas[1]?.id || cuentas[0]?.id || '',
+      cuentaExternaBanco: '',
+      cuentaExternaNumero: '',
+      cuentaExternaTitular: '',
+      valor: 0,
+      descripcion: '',
+      fechaMovimiento: new Date().toISOString().split('T')[0],
+    });
+    setEditingTransferId('');
+  };
 
   const fetchData = async () => {
     const [accountsRes, movementsRes] = await Promise.all([
@@ -52,7 +84,7 @@ export default function TransferenciasAdminBancosPage() {
   }, []);
 
   const transferGroups = useMemo(() => {
-    const groups = new Map<string, { id: string; fecha: string; descripcion: string; valor: number; origen: string; destino: string }>();
+    const groups = new Map<string, TransferGroupRow>();
 
     movimientos.forEach((movement) => {
       const groupId = movement.transferencia_grupo_id;
@@ -65,6 +97,12 @@ export default function TransferenciasAdminBancosPage() {
         valor: Number(movement.valor || 0),
         origen: '',
         destino: '',
+        cuentaOrigenId: '',
+        destinoModo: 'interna' as const,
+        cuentaDestinoId: '',
+        cuentaExternaBanco: '',
+        cuentaExternaNumero: '',
+        cuentaExternaTitular: '',
       };
       const externalAccount = movement.metadata?.cuenta_externa as
         | { banco?: string; numeroCuenta?: string; titular?: string }
@@ -72,13 +110,20 @@ export default function TransferenciasAdminBancosPage() {
 
       if (movement.tipo_movimiento === 'transferencia_salida') {
         existing.origen = cuentas.find((item) => item.id === movement.cuenta_id)?.nombre || 'N/A';
+        existing.cuentaOrigenId = movement.cuenta_id;
         if (externalAccount?.numeroCuenta) {
+          existing.destinoModo = 'externa';
+          existing.cuentaExternaBanco = externalAccount.banco || '';
+          existing.cuentaExternaNumero = externalAccount.numeroCuenta || '';
+          existing.cuentaExternaTitular = externalAccount.titular || '';
           existing.destino = `${externalAccount.banco || 'Cuenta Externa'} - ${externalAccount.numeroCuenta}${
             externalAccount.titular ? ` (${externalAccount.titular})` : ''
           }`;
         }
       }
       if (movement.tipo_movimiento === 'transferencia_entrada') {
+        existing.destinoModo = 'interna';
+        existing.cuentaDestinoId = movement.cuenta_id;
         existing.destino = cuentas.find((item) => item.id === movement.cuenta_id)?.nombre || 'N/A';
       }
 
@@ -99,8 +144,9 @@ export default function TransferenciasAdminBancosPage() {
 
     try {
       await authorizedJsonFetch('/api/admin-bancos/transferencias', {
-        method: 'POST',
+        method: editingTransferId ? 'PATCH' : 'POST',
         body: JSON.stringify({
+          id: editingTransferId || undefined,
           cuentaOrigenId: form.cuentaOrigenId,
           cuentaDestinoId: form.destinoModo === 'interna' ? form.cuentaDestinoId : null,
           cuentaExterna:
@@ -114,27 +160,62 @@ export default function TransferenciasAdminBancosPage() {
           valor: form.valor,
           descripcion: form.descripcion,
           fechaMovimiento: form.fechaMovimiento,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: editingTransferId ? undefined : crypto.randomUUID(),
         }),
       });
-      toast.success('Transferencia registrada');
-      setForm({
-        cuentaOrigenId: cuentas[0]?.id || '',
-        destinoModo: 'interna',
-        cuentaDestinoId: cuentas[1]?.id || cuentas[0]?.id || '',
-        cuentaExternaBanco: '',
-        cuentaExternaNumero: '',
-        cuentaExternaTitular: '',
-        valor: 0,
-        descripcion: '',
-        fechaMovimiento: new Date().toISOString().split('T')[0],
-      });
+      toast.success(editingTransferId ? 'Transferencia actualizada' : 'Transferencia registrada');
+      resetForm();
       await fetchData();
     } catch (error: any) {
-      toast.error(error?.message || 'No se pudo registrar la transferencia');
+      toast.error(error?.message || 'No se pudo guardar la transferencia');
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
+    }
+  };
+
+  const startEditingTransfer = (transfer: TransferGroupRow) => {
+    setEditingTransferId(transfer.id);
+    setForm({
+      cuentaOrigenId: transfer.cuentaOrigenId,
+      destinoModo: transfer.destinoModo,
+      cuentaDestinoId: transfer.cuentaDestinoId,
+      cuentaExternaBanco: transfer.cuentaExternaBanco,
+      cuentaExternaNumero: transfer.cuentaExternaNumero,
+      cuentaExternaTitular: transfer.cuentaExternaTitular,
+      valor: transfer.valor,
+      descripcion: transfer.descripcion,
+      fechaMovimiento: transfer.fecha,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReverseTransfer = async (transfer: TransferGroupRow) => {
+    const confirmed = window.confirm(
+      `Vas a reversar la transferencia "${transfer.descripcion}". Esta accion saca del libro la salida y la entrada relacionadas.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionTransferId(transfer.id);
+    try {
+      await authorizedJsonFetch('/api/admin-bancos/transferencias', {
+        method: 'DELETE',
+        body: JSON.stringify({ id: transfer.id }),
+      });
+
+      if (editingTransferId === transfer.id) {
+        resetForm();
+      }
+
+      toast.success('Transferencia reversada');
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo reversar la transferencia');
+    } finally {
+      setActionTransferId('');
     }
   };
 
@@ -155,7 +236,14 @@ export default function TransferenciasAdminBancosPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px,1fr] gap-6">
         <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl border border-white/30 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Nueva Transferencia</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+            {editingTransferId ? 'Editar Transferencia' : 'Nueva Transferencia'}
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {editingTransferId
+              ? 'Ajusta origen, destino, fecha, descripcion o valor sin perder la trazabilidad del grupo.'
+              : 'Traslada dinero entre cuentas registradas o hacia una cuenta externa.'}
+          </p>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Cuenta Origen">
               <select value={form.cuentaOrigenId} onChange={(e) => setForm({ ...form, cuentaOrigenId: e.target.value })} required className="w-full px-4 py-3 border border-gray-300 rounded-lg">
@@ -207,8 +295,23 @@ export default function TransferenciasAdminBancosPage() {
               disabled={submitting}
               className="w-full px-4 py-3 bg-primary text-white rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Registrando...' : 'Registrar Transferencia'}
+              {submitting
+                ? editingTransferId
+                  ? 'Guardando...'
+                  : 'Registrando...'
+                : editingTransferId
+                  ? 'Guardar Cambios'
+                  : 'Registrar Transferencia'}
             </button>
+            {editingTransferId && (
+              <button
+                type="button"
+                onClick={() => resetForm()}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700"
+              >
+                Cancelar Edicion
+              </button>
+            )}
           </form>
         </div>
 
@@ -222,6 +325,7 @@ export default function TransferenciasAdminBancosPage() {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Origen</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Destino</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Valor</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
@@ -232,11 +336,31 @@ export default function TransferenciasAdminBancosPage() {
                   <td className="px-4 py-3 text-sm text-gray-600">{transfer.origen || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{transfer.destino || 'N/A'}</td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">{formatCOP(transfer.valor)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startEditingTransfer(transfer)}
+                        disabled={submitting || actionTransferId === transfer.id}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-gray-700 disabled:opacity-50"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReverseTransfer(transfer)}
+                        disabled={actionTransferId === transfer.id}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-red-700 disabled:opacity-50"
+                      >
+                        {actionTransferId === transfer.id ? 'Reversando...' : 'Reversar'}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {transferGroups.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
                     No hay transferencias registradas.
                   </td>
                 </tr>

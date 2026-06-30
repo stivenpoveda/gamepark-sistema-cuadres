@@ -39,6 +39,20 @@ type UpdateMovementInput = {
   soporteUrl?: string | null;
 };
 
+type UpdateTransferInput = {
+  transferGroupId: string;
+  cuentaOrigenId: string;
+  cuentaDestinoId?: string | null;
+  cuentaExterna?: {
+    banco?: string | null;
+    numeroCuenta?: string | null;
+    titular?: string | null;
+  } | null;
+  valor: number;
+  descripcion: string;
+  fechaMovimiento: string;
+};
+
 const ACTIVE_MOVEMENTS_SELECT = `
   id,
   cuenta_id,
@@ -77,6 +91,32 @@ const getFinancialAccountNameFromPreset = (cuentaId: string) => {
   return `${selectedAccount.banco} ${selectedAccount.tipoCuenta} ${selectedAccount.numeroCuenta}`;
 };
 
+const DATAFONO_DEFAULT_ACCOUNT = {
+  banco: 'B. occidente',
+  tipoCuenta: 'Corriente',
+  numeroCuenta: '22584-6112',
+};
+
+const DATAFONO_VILLAVICENCIO_ACCOUNT = {
+  banco: 'Bancolombia',
+  tipoCuenta: 'Ahorros',
+  numeroCuenta: '20125684512',
+};
+
+const normalizeText = (value: string | null | undefined) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const isDatafonoLedgerMovement = (movement: {
+  tipo_movimiento: string;
+  metadata?: Record<string, unknown> | null;
+}) =>
+  movement.tipo_movimiento === 'cuadre_aprobado' &&
+  String((movement.metadata as Record<string, unknown> | null)?.entry_kind || '') === 'datafono';
+
 const findFinancialAccountIdByDetails = async (input: {
   banco?: string | null;
   tipoCuenta?: string | null;
@@ -99,6 +139,15 @@ const findFinancialAccountIdByDetails = async (input: {
     .maybeSingle();
 
   return financialAccount?.id || null;
+};
+
+const resolveDatafonoDestinationAccountId = async (city?: string | null) => {
+  const normalizedCity = normalizeText(city);
+  const targetAccount = normalizedCity.includes('villavicencio')
+    ? DATAFONO_VILLAVICENCIO_ACCOUNT
+    : DATAFONO_DEFAULT_ACCOUNT;
+
+  return findFinancialAccountIdByDetails(targetAccount);
 };
 
 export async function resolveFinancialAccountIdFromConsignacion(
@@ -555,13 +604,14 @@ export async function syncApprovedCuadreConsignaciones(
   await ensureFinancialBaseData(actor);
 
   const plan = await buildCuadreConsignacionSyncPlan(cuadre);
-  if (plan.length === 0) {
-    throw new Error('El cuadre no tiene consignaciones validas para registrar en libro');
+  const valorDatafono = Number(cuadre.venta_tarjetas || 0);
+  if (plan.length === 0 && valorDatafono <= 0) {
+    throw new Error('El cuadre no tiene consignaciones ni datafono validos para registrar en libro');
   }
 
   const { data: existingMovements, error: existingError } = await supabaseServer
     .from('movimientos_financieros')
-    .select('id,cuenta_id,metadata')
+    .select(ACTIVE_MOVEMENTS_SELECT)
     .eq('cuadre_id', params.cuadreId)
     .eq('tipo_movimiento', 'cuadre_aprobado')
     .eq('activo', true);
@@ -576,10 +626,18 @@ export async function syncApprovedCuadreConsignaciones(
     }
   }
 
+  const activeApprovedMovements = (existingMovements || []) as MovimientoFinanciero[];
+  const existingDatafonoMovement = activeApprovedMovements.find((movement) =>
+    isDatafonoLedgerMovement(movement)
+  );
+  const bankApprovedMovements = activeApprovedMovements.filter(
+    (movement) => !isDatafonoLedgerMovement(movement)
+  );
+
   const activeMovementMap = new Map<string, { id: string; cuenta_id: string }>();
   let hasLegacyMovement = false;
 
-  for (const movement of existingMovements || []) {
+  for (const movement of bankApprovedMovements) {
     const consignacionId = String(
       (movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''
     ).trim();
@@ -661,9 +719,46 @@ export async function syncApprovedCuadreConsignaciones(
     createdMovements.push(movement);
   }
 
+  let datafonoMovement: MovimientoFinanciero | null = null;
+  let datafonoSkippedReason: string | null = null;
+
+  if (valorDatafono > 0) {
+    if (existingDatafonoMovement && !params.forceHistorical) {
+      datafonoSkippedReason = 'ya_registrado';
+    } else {
+      const cuentaDatafonoId = await resolveDatafonoDestinationAccountId(
+        cuadre.punto_de_venta?.ciudad || null
+      );
+
+      if (!cuentaDatafonoId) {
+        datafonoSkippedReason = 'cuenta_datafono_no_configurada';
+      } else {
+        datafonoMovement = await createFinancialMovement(actor, {
+          cuentaId: cuentaDatafonoId,
+          tipoMovimiento: 'cuadre_aprobado',
+          descripcion: `Ingreso por datafono ${cuadre.punto_de_venta?.nombre || 'PDV'} ${cuadre.fecha}`,
+          fechaMovimiento: cuadre.fecha,
+          valor: valorDatafono,
+          pdvId: cuadre.punto_de_venta_id,
+          cuadreId: cuadre.id,
+          cuentaContraparteId: null,
+          origen: params.forceHistorical ? 'historico' : 'cuadre_aprobado',
+          metadata: {
+            entry_kind: 'datafono',
+            payment_channel: 'datafono',
+            fecha_cuadre: cuadre.fecha,
+            pdv_nombre: cuadre.punto_de_venta?.nombre || null,
+            pdv_ciudad: cuadre.punto_de_venta?.ciudad || null,
+            datafono_valor: valorDatafono,
+          },
+        });
+      }
+    }
+  }
+
   const { data: remainingMovements, error: remainingError } = await supabaseServer
     .from('movimientos_financieros')
-    .select('id,cuenta_id')
+    .select('id,cuenta_id,metadata')
     .eq('cuadre_id', params.cuadreId)
     .eq('tipo_movimiento', 'cuadre_aprobado')
     .eq('activo', true)
@@ -673,11 +768,17 @@ export async function syncApprovedCuadreConsignaciones(
     throw remainingError;
   }
 
+  const remainingConsignacionMovements = ((remainingMovements || []) as Array<{
+    id: string;
+    cuenta_id: string;
+    metadata?: Record<string, unknown> | null;
+  }>).filter((movement) => !isDatafonoLedgerMovement({ tipo_movimiento: 'cuadre_aprobado', metadata: movement.metadata }));
+
   const uniqueAccountIds = Array.from(
-    new Set((remainingMovements || []).map((movement) => movement.cuenta_id).filter(Boolean))
+    new Set(remainingConsignacionMovements.map((movement) => movement.cuenta_id).filter(Boolean))
   );
   const referenceMovementId =
-    remainingMovements && remainingMovements.length === 1 ? remainingMovements[0].id : null;
+    remainingConsignacionMovements.length === 1 ? remainingConsignacionMovements[0].id : null;
   const referenceAccountId =
     uniqueAccountIds.length === 1 ? uniqueAccountIds[0] : null;
 
@@ -690,17 +791,23 @@ export async function syncApprovedCuadreConsignaciones(
     })
     .eq('id', params.cuadreId);
 
+  const totalCreatedCount = createdMovements.length + (datafonoMovement ? 1 : 0);
+
   return {
-    synced: createdMovements.length > 0,
+    synced: totalCreatedCount > 0,
     message:
-      createdMovements.length > 0
+      totalCreatedCount > 0
         ? 'Consignaciones registradas en el libro bancario'
         : 'No hubo consignaciones nuevas para registrar',
-    createdCount: createdMovements.length,
+    createdCount: totalCreatedCount,
+    consignacionesCreatedCount: createdMovements.length,
+    datafonoCreated: Boolean(datafonoMovement),
+    datafonoAmount: datafonoMovement ? valorDatafono : 0,
+    datafonoSkippedReason,
     pendingCount: skipped.filter((item) => item.reason === 'cuenta_no_resuelta').length,
     informativeCount: skipped.filter((item) => item.reason === 'consignacion_informativa').length,
     skipped,
-    movements: createdMovements,
+    movements: datafonoMovement ? [...createdMovements, datafonoMovement] : createdMovements,
   };
 }
 
@@ -840,6 +947,154 @@ export async function createTransferBetweenAccounts(
     salida,
     entrada,
   };
+}
+
+const getEditableTransferGroup = async (transferGroupId: string) => {
+  const { data: movements, error } = await supabaseServer
+    .from('movimientos_financieros')
+    .select(ACTIVE_MOVEMENTS_SELECT)
+    .eq('transferencia_grupo_id', transferGroupId)
+    .eq('activo', true)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!movements || movements.length === 0) {
+    throw new Error('No se encontro la transferencia');
+  }
+
+  const salida =
+    movements.find((movement) => movement.tipo_movimiento === 'transferencia_salida') || null;
+  const entrada =
+    movements.find((movement) => movement.tipo_movimiento === 'transferencia_entrada') || null;
+
+  if (!salida || salida.origen !== 'transferencia') {
+    throw new Error('La transferencia no se puede editar desde esta pantalla');
+  }
+
+  return {
+    salida: salida as MovimientoFinanciero,
+    entrada: (entrada as MovimientoFinanciero | null) || null,
+  };
+};
+
+export async function updateTransferBetweenAccounts(actor: Usuario, input: UpdateTransferInput) {
+  if (!input.cuentaDestinoId && !input.cuentaExterna?.numeroCuenta) {
+    throw new Error('Debes seleccionar una cuenta destino o registrar una cuenta externa');
+  }
+
+  if (input.cuentaDestinoId && input.cuentaOrigenId === input.cuentaDestinoId) {
+    throw new Error('La cuenta origen y destino deben ser diferentes');
+  }
+
+  const valor = Number(input.valor || 0);
+  if (valor <= 0) {
+    throw new Error('El valor de la transferencia debe ser mayor a cero');
+  }
+
+  const { salida, entrada } = await getEditableTransferGroup(input.transferGroupId);
+  const externalAccount = input.cuentaExterna || null;
+  const now = new Date().toISOString();
+
+  const { data: updatedSalida, error: salidaError } = await supabaseServer
+    .from('movimientos_financieros')
+    .update({
+      cuenta_id: input.cuentaOrigenId,
+      cuenta_contraparte_id: input.cuentaDestinoId || null,
+      descripcion: input.descripcion.trim(),
+      fecha_movimiento: input.fechaMovimiento,
+      valor,
+      metadata: {
+        ...((salida.metadata as Record<string, unknown> | null) || {}),
+        direccion: 'salida',
+        cuenta_externa: externalAccount,
+      },
+      updated_by: actor.id,
+      updated_at: now,
+    })
+    .eq('id', salida.id)
+    .select(ACTIVE_MOVEMENTS_SELECT)
+    .single();
+
+  if (salidaError || !updatedSalida) {
+    throw salidaError || new Error('No se pudo actualizar la salida de la transferencia');
+  }
+
+  if (!input.cuentaDestinoId) {
+    if (entrada) {
+      await softDeleteFinancialMovement(actor, entrada.id);
+    }
+
+    return {
+      transferenciaGrupoId: input.transferGroupId,
+      salida: updatedSalida as MovimientoFinanciero,
+      entrada: null,
+    };
+  }
+
+  if (entrada) {
+    const { data: updatedEntrada, error: entradaError } = await supabaseServer
+      .from('movimientos_financieros')
+      .update({
+        cuenta_id: input.cuentaDestinoId,
+        cuenta_contraparte_id: input.cuentaOrigenId,
+        descripcion: input.descripcion.trim(),
+        fecha_movimiento: input.fechaMovimiento,
+        valor,
+        metadata: {
+          ...((entrada.metadata as Record<string, unknown> | null) || {}),
+          direccion: 'entrada',
+        },
+        updated_by: actor.id,
+        updated_at: now,
+      })
+      .eq('id', entrada.id)
+      .select(ACTIVE_MOVEMENTS_SELECT)
+      .single();
+
+    if (entradaError || !updatedEntrada) {
+      throw entradaError || new Error('No se pudo actualizar la entrada de la transferencia');
+    }
+
+    return {
+      transferenciaGrupoId: input.transferGroupId,
+      salida: updatedSalida as MovimientoFinanciero,
+      entrada: updatedEntrada as MovimientoFinanciero,
+    };
+  }
+
+  const createdEntrada = await createFinancialMovement(actor, {
+    cuentaId: input.cuentaDestinoId,
+    cuentaContraparteId: input.cuentaOrigenId,
+    tipoMovimiento: 'transferencia_entrada',
+    descripcion: input.descripcion,
+    fechaMovimiento: input.fechaMovimiento,
+    valor,
+    transferenciaGrupoId: input.transferGroupId,
+    origen: 'transferencia',
+    metadata: {
+      direccion: 'entrada',
+    },
+  });
+
+  return {
+    transferenciaGrupoId: input.transferGroupId,
+    salida: updatedSalida as MovimientoFinanciero,
+    entrada: createdEntrada,
+  };
+}
+
+export async function reverseTransferBetweenAccounts(actor: Usuario, transferGroupId: string) {
+  const { salida, entrada } = await getEditableTransferGroup(transferGroupId);
+
+  await softDeleteFinancialMovement(actor, salida.id);
+  if (entrada) {
+    await softDeleteFinancialMovement(actor, entrada.id);
+  }
+
+  return true;
 }
 
 export async function softDeleteFinancialMovement(actor: Usuario, movementId: string) {

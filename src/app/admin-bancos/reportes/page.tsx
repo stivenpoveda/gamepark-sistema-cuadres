@@ -8,11 +8,12 @@ import { supabase } from '@/lib/supabase';
 import {
   CategoriaFinanciera,
   CuentaFinanciera,
+  formatMovementDisplayTypeLabel,
   formatMovementOriginLabel,
-  formatMovementTypeLabel,
   getEffectiveFinancialMovements,
   getCurrentMonthRange,
   isAutomaticBookMovement,
+  isDatafonoMovement,
   isManualBookMovement,
   isMovementIncome,
   MovimientoFinanciero,
@@ -130,7 +131,17 @@ export default function ReportesAdminBancosPage() {
       if (filters.cuentaId && movement.cuenta_id !== filters.cuentaId) return false;
       if (filters.puntoVentaId && movement.pdv_id !== filters.puntoVentaId) return false;
       if (filters.categoriaId && movement.categoria_id !== filters.categoriaId) return false;
-      if (filters.tipoMovimiento && movement.tipo_movimiento !== filters.tipoMovimiento) return false;
+      if (filters.tipoMovimiento === 'ingreso_datafono' && !isDatafonoMovement(movement)) return false;
+      if (
+        filters.tipoMovimiento &&
+        filters.tipoMovimiento !== 'ingreso_datafono' &&
+        (
+          movement.tipo_movimiento !== filters.tipoMovimiento ||
+          (filters.tipoMovimiento === 'cuadre_aprobado' && isDatafonoMovement(movement))
+        )
+      ) {
+        return false;
+      }
       if (filters.vistaReporte === 'manual' && !isManualBookMovement(movement)) return false;
       if (filters.vistaReporte === 'automatico' && !isAutomaticBookMovement(movement)) return false;
       if (filters.vistaReporte === 'informativo') return false;
@@ -146,7 +157,7 @@ export default function ReportesAdminBancosPage() {
     () =>
       filteredMovements.map((movement) => ({
         fecha: movement.fecha_movimiento,
-        tipo: formatMovementTypeLabel(movement.tipo_movimiento),
+        tipo: formatMovementDisplayTypeLabel(movement),
         origen: formatMovementOriginLabel(movement.origen),
         cuenta: cuentas.find((item) => item.id === movement.cuenta_id)?.nombre || 'N/A',
         ciudad: puntosVenta.find((item) => item.id === movement.pdv_id)?.ciudad || '',
@@ -217,6 +228,14 @@ export default function ReportesAdminBancosPage() {
         { total: 0, cantidad: 0 }
       ),
     [informativeRows]
+  );
+
+  const datafonoTotal = useMemo(
+    () =>
+      filteredMovements
+        .filter((movement) => isDatafonoMovement(movement))
+        .reduce((sum, movement) => sum + Number(movement.valor || 0), 0),
+    [filteredMovements]
   );
 
   const showLedgerSection =
@@ -305,7 +324,7 @@ export default function ReportesAdminBancosPage() {
     <div class="summary">
       <div class="card"><div class="label">Ingresos Libro</div><div class="value">${formatCOP(totals.ingresos)}</div></div>
       <div class="card"><div class="label">Egresos Libro</div><div class="value">${formatCOP(totals.egresos)}</div></div>
-      <div class="card"><div class="label">Flujo Neto</div><div class="value">${formatCOP(totals.ingresos - totals.egresos)}</div></div>
+      <div class="card"><div class="label">Ingresos Datafono</div><div class="value">${formatCOP(datafonoTotal)}</div></div>
       <div class="card"><div class="label">Ctas No Registradas</div><div class="value">${formatCOP(informativeTotals.total)}</div></div>
     </div>
 
@@ -539,6 +558,7 @@ export default function ReportesAdminBancosPage() {
               <option value="">Todos</option>
               <option value="ingreso">Ingreso</option>
               <option value="egreso">Egreso</option>
+              <option value="ingreso_datafono">Ingreso Datafono</option>
               <option value="transferencia_entrada">Transferencia Entrada</option>
               <option value="transferencia_salida">Transferencia Salida</option>
               <option value="cuadre_aprobado">Ingreso por Cuadre</option>
@@ -550,7 +570,7 @@ export default function ReportesAdminBancosPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <ReportMetric label="Ingresos Libro" value={formatCOP(totals.ingresos)} />
         <ReportMetric label="Egresos Libro" value={formatCOP(totals.egresos)} />
-        <ReportMetric label="Flujo Neto" value={formatCOP(totals.ingresos - totals.egresos)} />
+        <ReportMetric label="Ingresos Datafono" value={formatCOP(datafonoTotal)} />
         <ReportMetric label="Ctas No Registradas" value={formatCOP(informativeTotals.total)} />
       </div>
 

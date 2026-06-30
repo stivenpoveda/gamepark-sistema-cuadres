@@ -25,8 +25,8 @@ import {
   getAccountBalance,
   getEffectiveFinancialMovements,
   getFinancialAccountTitular,
+  getTopDatafonoByPdv,
   getTopExpensesByCategory,
-  getTopIncomeByPdv,
   groupMovementsByMonth,
   MovimientoFinanciero,
 } from '@/lib/admin-bancos';
@@ -91,8 +91,8 @@ export default function AdminBancosDashboardPage() {
     () => getTopExpensesByCategory(movimientos, categorias),
     [movimientos, categorias]
   );
-  const topIncomes = useMemo(
-    () => getTopIncomeByPdv(movimientos, puntosVenta),
+  const topDatafono = useMemo(
+    () => getTopDatafonoByPdv(movimientos, puntosVenta),
     [movimientos, puntosVenta]
   );
   const today = new Date().toISOString().split('T')[0];
@@ -194,7 +194,7 @@ export default function AdminBancosDashboardPage() {
         <MetricCard label="Saldo Total Consolidado" value={formatCOP(summary.saldoTotal)} />
         <MetricCard label="Ingresos del Mes" value={formatCOP(summary.ingresosMes)} />
         <MetricCard label="Egresos del Mes" value={formatCOP(summary.egresosMes)} />
-        <MetricCard label="Flujo Neto" value={formatCOP(summary.flujoNeto)} />
+        <MetricCard label="Ingresos por Datafono" value={formatCOP(summary.ingresosDatafonoMes)} />
         <MetricCard label="Cuentas Activas" value={String(cuentas.filter((item) => item.estado === 'activa').length)} />
         <MetricCard label="Pendiente por Registrar" value={formatCOP(totalPendienteSincronizar)} />
       </div>
@@ -301,10 +301,10 @@ export default function AdminBancosDashboardPage() {
         </div>
 
         <div className="min-w-0 bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl border border-white/30 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Ingresos por PDV</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Ingresos Datafono por PDV</h3>
           <div className="h-80 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topIncomes}>
+              <BarChart data={topDatafono}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" hide />
                 <YAxis />
@@ -314,7 +314,7 @@ export default function AdminBancosDashboardPage() {
             </ResponsiveContainer>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-2">
-            {topIncomes.map((item) => (
+            {topDatafono.map((item) => (
               <div key={item.name} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2">
                 <span className="text-gray-600">{item.name}</span>
                 <span className="font-semibold text-gray-900">{formatCOP(item.value)}</span>

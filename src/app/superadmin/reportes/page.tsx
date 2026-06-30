@@ -27,6 +27,37 @@ const applyNumericFormat = (worksheet: ExcelJS.Worksheet, keys: string[]) => {
   });
 };
 
+const resolveConsignacionSupportValues = (
+  soportes: Array<{ valor?: number }>,
+  valorConsignado: number
+) => {
+  const valores = soportes.map((soporte) => Number(soporte.valor) || 0);
+
+  if (soportes.length === 0) {
+    return valores;
+  }
+
+  if (soportes.length === 1 && valores[0] <= 0 && valorConsignado > 0) {
+    return [valorConsignado];
+  }
+
+  const zeroIndexes = valores
+    .map((value, index) => ({ value, index }))
+    .filter((item) => item.value <= 0)
+    .map((item) => item.index);
+
+  if (zeroIndexes.length === 1 && valorConsignado > 0) {
+    const knownTotal = valores.reduce((sum, value) => sum + (value > 0 ? value : 0), 0);
+    const remaining = valorConsignado - knownTotal;
+
+    if (remaining > 0) {
+      valores[zeroIndexes[0]] = remaining;
+    }
+  }
+
+  return valores;
+};
+
 export default function SuperadminReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -456,11 +487,13 @@ export default function SuperadminReportesPage() {
     consignaciones.forEach((c) => {
       const consignaHoy = (c.consigna_hoy ?? true) === true;
       const conFoto = Boolean(c.url_foto_consignacion);
+      const valorConsignado = Number(c.valor_consignado) || 0;
       const metadata = parseConsignacionMetadata((c as any).firma_cajero_url);
       const soportes = getConsignacionSoportes({
         url_foto_consignacion: (c as any).url_foto_consignacion,
         firma_cajero_url: (c as any).firma_cajero_url,
       });
+      const soporteValues = resolveConsignacionSupportValues(soportes, valorConsignado);
 
       if (soportes.length === 0) {
         const cuenta =
@@ -475,9 +508,9 @@ export default function SuperadminReportesPage() {
           tipoCuenta: cuenta?.tipoCuenta || metadata?.tipoCuenta || '',
           numeroCuenta: cuenta?.numeroCuenta || metadata?.numeroCuenta || '',
           titular: cuenta?.titular || metadata?.titular || '',
-          valorSoporte: 0,
+          valorSoporte: valorConsignado,
           consignaHoy: consignaHoy ? 'Sí' : 'No',
-          valorConsignado: Number(c.valor_consignado) || 0,
+          valorConsignado,
           pendiente: Number(c.consignacion_pendiente) || 0,
           estado: c.estado,
           conFoto: conFoto ? 'Sí' : 'No',
@@ -498,9 +531,9 @@ export default function SuperadminReportesPage() {
           tipoCuenta: cuenta?.tipoCuenta || soporte.tipoCuenta || soporte.otraCuenta?.tipoCuenta || '',
           numeroCuenta: cuenta?.numeroCuenta || soporte.numeroCuenta || soporte.otraCuenta?.numeroCuenta || '',
           titular: cuenta?.titular || soporte.titular || soporte.otraCuenta?.titular || '',
-          valorSoporte: Number(soporte.valor) || 0,
+          valorSoporte: soporteValues[index] || 0,
           consignaHoy: consignaHoy ? 'Sí' : 'No',
-          valorConsignado: Number(c.valor_consignado) || 0,
+          valorConsignado: index === 0 ? valorConsignado : 0,
           pendiente: Number(c.consignacion_pendiente) || 0,
           estado: c.estado,
           conFoto: soporte.fotoUrl ? 'Sí' : 'No',

@@ -10,9 +10,10 @@ import {
   authorizedJsonFetch,
   CategoriaFinanciera,
   CuentaFinanciera,
+  formatMovementDisplayTypeLabel,
   formatMovementOriginLabel,
-  formatMovementTypeLabel,
   getEffectiveFinancialMovements,
+  isDatafonoMovement,
   isAutomaticBookMovement,
   isManualBookMovement,
   MovimientoFinanciero,
@@ -67,6 +68,7 @@ export default function MovimientosAdminBancosPage() {
     tipoMovimiento: '',
     cuentaId: '',
     categoriaId: '',
+    pdvId: '',
   });
   const submitLockRef = useRef(false);
 
@@ -129,9 +131,29 @@ export default function MovimientosAdminBancosPage() {
     () =>
       movimientos.filter((movement) => {
         if (filters.vistaHistorial === 'informativo') return false;
-        if (filters.tipoMovimiento && movement.tipo_movimiento !== filters.tipoMovimiento) return false;
+        if (
+          filters.tipoMovimiento === 'ingreso_datafono' &&
+          !(
+            movement.tipo_movimiento === 'cuadre_aprobado' &&
+            String((movement.metadata as Record<string, unknown> | null)?.entry_kind || '') ===
+              'datafono'
+          )
+        ) {
+          return false;
+        }
+        if (
+          filters.tipoMovimiento &&
+          filters.tipoMovimiento !== 'ingreso_datafono' &&
+          (
+            movement.tipo_movimiento !== filters.tipoMovimiento ||
+            (filters.tipoMovimiento === 'cuadre_aprobado' && isDatafonoMovement(movement))
+          )
+        ) {
+          return false;
+        }
         if (filters.cuentaId && movement.cuenta_id !== filters.cuentaId) return false;
         if (filters.categoriaId && movement.categoria_id !== filters.categoriaId) return false;
+        if (filters.pdvId && movement.pdv_id !== filters.pdvId) return false;
         return true;
       }),
     [filters, movimientos]
@@ -149,6 +171,9 @@ export default function MovimientosAdminBancosPage() {
 
   const informativeRows = useMemo(() => {
     return cuadresAprobados.flatMap((cuadre) => {
+      if (filters.pdvId && cuadre.punto_de_venta_id !== filters.pdvId) {
+        return [];
+      }
       const pdv = puntosVenta.find((item) => item.id === cuadre.punto_de_venta_id);
 
       return getCuadreConsignacionesRegistrables({
@@ -170,7 +195,7 @@ export default function MovimientosAdminBancosPage() {
           descripcion: 'Consignacion a cuenta no registrada o de tercero',
         }));
     });
-  }, [cuadresAprobados, puntosVenta]);
+  }, [cuadresAprobados, filters.pdvId, puntosVenta]);
 
   const showManualSection =
     filters.vistaHistorial === 'todos' || filters.vistaHistorial === 'manual';
@@ -398,6 +423,7 @@ export default function MovimientosAdminBancosPage() {
                   <option value="">Todos</option>
                   <option value="ingreso">Ingreso</option>
                   <option value="egreso">Egreso</option>
+                  <option value="ingreso_datafono">Ingreso Datafono</option>
                   <option value="transferencia_entrada">Transferencia Entrada</option>
                   <option value="transferencia_salida">Transferencia Salida</option>
                   <option value="cuadre_aprobado">Cuadre Aprobado</option>
@@ -419,6 +445,14 @@ export default function MovimientosAdminBancosPage() {
                   ))}
                 </select>
               </Field>
+              <Field label="PDV">
+                <select value={filters.pdvId} onChange={(e) => setFilters({ ...filters, pdvId: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg">
+                  <option value="">Todos</option>
+                  {puntosVenta.map((pdv) => (
+                    <option key={pdv.id} value={pdv.id}>{pdv.nombre}</option>
+                  ))}
+                </select>
+              </Field>
             </div>
           </div>
 
@@ -431,7 +465,7 @@ export default function MovimientosAdminBancosPage() {
             <div className="rounded-xl bg-white/95 border border-white/30 p-5 shadow-2xl">
               <p className="text-sm text-gray-500">Movimientos Automaticos</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">{automaticMovements.length}</p>
-              <p className="text-xs text-gray-500 mt-1">Incluye ingresos por cuadre aprobado, historicos y transferencias.</p>
+              <p className="text-xs text-gray-500 mt-1">Incluye ingresos por cuadre, ingresos por datafono, historicos y transferencias.</p>
             </div>
             <div className="rounded-xl bg-white/95 border border-white/30 p-5 shadow-2xl md:col-span-2">
               <p className="text-sm text-gray-500">Cuentas No Registradas</p>
@@ -541,7 +575,7 @@ function MovementHistoryTable({
             return (
               <tr key={movement.id}>
                 <td className="px-4 py-3 text-sm text-gray-600">{formatDate(movement.fecha_movimiento)}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">{formatMovementTypeLabel(movement.tipo_movimiento)}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{formatMovementDisplayTypeLabel(movement)}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{formatMovementOriginLabel(movement.origen)}</td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {cuentas.find((item) => item.id === movement.cuenta_id)?.nombre || 'N/A'}

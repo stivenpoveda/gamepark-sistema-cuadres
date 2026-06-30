@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     const { data: cuadre, error: cuadreError } = await supabaseServer
       .from('cuadres_diarios')
-      .select('id,estado,fecha,valor_consignado,url_foto_consignacion,firma_cajero_url,cuenta_financiera_destino_id,movimiento_financiero_sync_id')
+      .select('id,estado,fecha,valor_consignado,venta_tarjetas,url_foto_consignacion,firma_cajero_url,cuenta_financiera_destino_id,movimiento_financiero_sync_id')
       .eq('id', cuadreId)
       .single();
 
@@ -47,7 +47,8 @@ export async function POST(request: Request) {
     }
 
     const valorConsignado = Number(approvedCuadre.valor_consignado || 0);
-    if (valorConsignado <= 0) {
+    const valorDatafono = Number(approvedCuadre.venta_tarjetas || 0);
+    if (valorConsignado <= 0 && valorDatafono <= 0) {
       return NextResponse.json({
         success: true,
         cuadre: approvedCuadre,
@@ -61,8 +62,9 @@ export async function POST(request: Request) {
     const hasPendingResolution = plan.some((item) => !item.isInformative && !item.cuentaFinancieraId);
     const hasInformativeOnly =
       plan.length > 0 && !hasPendingResolution && autoRegistrables.length === 0;
+    const hasDatafono = valorDatafono > 0;
 
-    if (autoRegistrables.length === 0) {
+    if (autoRegistrables.length === 0 && !hasDatafono) {
       return NextResponse.json({
         success: true,
         cuadre: approvedCuadre,

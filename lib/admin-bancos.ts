@@ -107,6 +107,7 @@ export type FinancialSummary = {
   ingresosMes: number;
   egresosMes: number;
   flujoNeto: number;
+  ingresosDatafonoMes: number;
 };
 
 const BASE_ACCOUNT_TITULARS = new Map<string, string>([
@@ -140,6 +141,21 @@ export const formatMovementTypeLabel = (type: MovementType) => {
 
   return labels[type] || type;
 };
+
+export const isDatafonoMovement = (
+  movement: Pick<MovimientoFinanciero, 'tipo_movimiento' | 'metadata'>
+) =>
+  movement.tipo_movimiento === 'cuadre_aprobado' &&
+  String((movement.metadata as Record<string, unknown> | null)?.entry_kind || '') === 'datafono';
+
+export const isConsignacionMovement = (
+  movement: Pick<MovimientoFinanciero, 'tipo_movimiento' | 'metadata'>
+) =>
+  movement.tipo_movimiento === 'cuadre_aprobado' && !isDatafonoMovement(movement);
+
+export const formatMovementDisplayTypeLabel = (
+  movement: Pick<MovimientoFinanciero, 'tipo_movimiento' | 'metadata'>
+) => (isDatafonoMovement(movement) ? 'Ingreso Datafono' : formatMovementTypeLabel(movement.tipo_movimiento));
 
 export const formatMovementOriginLabel = (origin: MovimientoFinanciero['origen']) => {
   const labels: Record<MovimientoFinanciero['origen'], string> = {
@@ -332,6 +348,26 @@ export const getTopIncomeByPdv = (
     .slice(0, 8);
 };
 
+export const getTopDatafonoByPdv = (
+  movements: MovimientoFinanciero[],
+  puntosDeVenta: Array<{ id: string; nombre: string }>
+) => {
+  const pdvMap = new Map(puntosDeVenta.map((item) => [item.id, item.nombre]));
+  const totals = new Map<string, number>();
+
+  getEffectiveFinancialMovements(movements)
+    .filter((movement) => isDatafonoMovement(movement))
+    .forEach((movement) => {
+      const pdvName = pdvMap.get(movement.pdv_id || '') || 'Sin PDV';
+      totals.set(pdvName, (totals.get(pdvName) || 0) + Number(movement.valor || 0));
+    });
+
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+};
+
 export const buildFinancialSummary = (
   accounts: CuentaFinanciera[],
   movements: MovimientoFinanciero[]
@@ -355,11 +391,16 @@ export const buildFinancialSummary = (
     .filter((movement) => isMovementExpense(movement.tipo_movimiento))
     .reduce((sum, movement) => sum + Number(movement.valor || 0), 0);
 
+  const ingresosDatafonoMes = monthlyMovements
+    .filter((movement) => isDatafonoMovement(movement))
+    .reduce((sum, movement) => sum + Number(movement.valor || 0), 0);
+
   return {
     saldoTotal,
     ingresosMes,
     egresosMes,
     flujoNeto: ingresosMes - egresosMes,
+    ingresosDatafonoMes,
   };
 };
 
