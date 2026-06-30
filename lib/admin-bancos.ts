@@ -186,15 +186,54 @@ export const getMovementSignedValue = (movement: Pick<MovimientoFinanciero, 'tip
   isMovementIncome(movement.tipo_movimiento) ? Number(movement.valor || 0) : -Number(movement.valor || 0);
 
 export const getEffectiveFinancialMovements = (movements: MovimientoFinanciero[]) => {
-  const cuadreWithOfficialMovement = new Set(
+  const officialDatafonoCuadres = new Set(
     movements
       .filter(
         (movement) =>
           movement.activo !== false &&
           movement.tipo_movimiento === 'cuadre_aprobado' &&
           movement.origen !== 'historico' &&
-          Boolean(movement.cuadre_id)
+          Boolean(movement.cuadre_id) &&
+          isDatafonoMovement(movement)
       )
+      .map((movement) => movement.cuadre_id as string)
+  );
+
+  const officialConsignacionKeys = new Set(
+    movements
+      .filter(
+        (movement) =>
+          movement.activo !== false &&
+          movement.tipo_movimiento === 'cuadre_aprobado' &&
+          movement.origen !== 'historico' &&
+          Boolean(movement.cuadre_id) &&
+          !isDatafonoMovement(movement)
+      )
+      .map((movement) => {
+        const consignacionId = String(
+          (movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''
+        ).trim();
+        return consignacionId ? `${movement.cuadre_id as string}::${consignacionId}` : '';
+      })
+      .filter(Boolean)
+  );
+
+  const officialLegacyConsignacionCuadres = new Set(
+    movements
+      .filter(
+        (movement) =>
+          movement.activo !== false &&
+          movement.tipo_movimiento === 'cuadre_aprobado' &&
+          movement.origen !== 'historico' &&
+          Boolean(movement.cuadre_id) &&
+          !isDatafonoMovement(movement)
+      )
+      .filter((movement) => {
+        const consignacionId = String(
+          (movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''
+        ).trim();
+        return !consignacionId;
+      })
       .map((movement) => movement.cuadre_id as string)
   );
 
@@ -217,10 +256,21 @@ export const getEffectiveFinancialMovements = (movements: MovimientoFinanciero[]
       movement.activo !== false &&
       movement.tipo_movimiento === 'cuadre_aprobado' &&
       movement.origen === 'historico' &&
-      movement.cuadre_id &&
-      cuadreWithOfficialMovement.has(movement.cuadre_id)
+      movement.cuadre_id
     ) {
-      return false;
+      if (isDatafonoMovement(movement) && officialDatafonoCuadres.has(movement.cuadre_id)) {
+        return false;
+      }
+
+      const consignacionId = String(
+        (movement.metadata as Record<string, unknown> | null)?.consignacion_id || ''
+      ).trim();
+
+      if (consignacionId) {
+        return !officialConsignacionKeys.has(`${movement.cuadre_id}::${consignacionId}`);
+      }
+
+      return !officialLegacyConsignacionCuadres.has(movement.cuadre_id);
     }
 
     if (
