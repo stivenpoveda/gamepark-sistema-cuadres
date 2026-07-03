@@ -2,12 +2,18 @@
 
 import { NextResponse } from 'next/server';
 import { APP_ROLES } from '@/lib/roles';
+import { requireRoleFromRequest } from '@/lib/server-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 
 export async function POST(request: Request) {
   let authUserId: string | null = null;
   let normalizedRol = '';
   try {
+    const auth = await requireRoleFromRequest(request, { allowSuper: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const { nombre, email, password, rol, punto_de_venta_id } = await request.json();
     normalizedRol = typeof rol === 'string' ? rol.trim() : '';
 

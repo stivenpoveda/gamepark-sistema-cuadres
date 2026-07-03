@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Plus, Edit2, Trash2, ArrowLeft } from 'lucide-react';
+import { authorizedJsonFetch } from '@/lib/admin-bancos';
 import { useRouter } from 'next/navigation';
 import type { Usuario, PuntoDeVenta } from '@/types';
 import type { AppRole } from '@/lib/roles';
@@ -15,6 +16,7 @@ export default function UsuariosPage() {
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<Usuario | null>(null);
+  const [actionUserId, setActionUserId] = useState('');
   const [newUser, setNewUser] = useState({
     nombre: '',
     email: '',
@@ -60,10 +62,8 @@ export default function UsuariosPage() {
         if (error) throw error;
         toast.success('Usuario actualizado');
       } else {
-        // Llamar a la API para crear el usuario (usa service role key en el servidor)
-        const response = await fetch('/api/crear-usuario', {
+        await authorizedJsonFetch('/api/crear-usuario', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nombre: newUser.nombre,
             email: newUser.email,
@@ -72,13 +72,6 @@ export default function UsuariosPage() {
             punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
           }),
         });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Error al crear usuario');
-        }
-
         toast.success('Usuario creado exitosamente. Puede iniciar sesión con la contraseña establecida.');
       }
 
@@ -105,6 +98,54 @@ export default function UsuariosPage() {
       });
     } catch (error: any) {
       toast.error(error.message || 'Error');
+    }
+  };
+
+  const handleChangePassword = async (usuario: Usuario) => {
+    const first = window.prompt(`Nueva contraseña para ${usuario.nombre} (${usuario.email}):`);
+    if (!first) return;
+    const second = window.prompt('Confirma la nueva contraseña:');
+    if (!second) return;
+    if (first !== second) {
+      toast.error('Las contraseñas no coinciden');
+      return;
+    }
+    if (first.length < 8) {
+      toast.error('La contraseña debe tener mínimo 8 caracteres');
+      return;
+    }
+
+    setActionUserId(usuario.id);
+    try {
+      await authorizedJsonFetch('/api/superadmin/usuarios/password', {
+        method: 'PATCH',
+        body: JSON.stringify({ userId: usuario.id, password: first }),
+      });
+      toast.success('Contraseña actualizada');
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo actualizar la contraseña');
+    } finally {
+      setActionUserId('');
+    }
+  };
+
+  const handleSendResetEmail = async (usuario: Usuario) => {
+    const confirmed = window.confirm(
+      `Se enviará un correo de restablecimiento a ${usuario.email}. ¿Deseas continuar?`
+    );
+    if (!confirmed) return;
+
+    setActionUserId(usuario.id);
+    try {
+      await authorizedJsonFetch('/api/superadmin/usuarios/password', {
+        method: 'POST',
+        body: JSON.stringify({ email: usuario.email }),
+      });
+      toast.success('Correo de restablecimiento enviado');
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo enviar el correo');
+    } finally {
+      setActionUserId('');
     }
   };
 
@@ -245,6 +286,22 @@ export default function UsuariosPage() {
                           className="text-blue-600 hover:text-blue-800"
                         >
                           <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleChangePassword(usuario)}
+                          disabled={actionUserId === usuario.id}
+                          className="text-gray-700 hover:text-gray-900 disabled:opacity-50"
+                          title="Cambiar contraseña"
+                        >
+                          Clave
+                        </button>
+                        <button
+                          onClick={() => handleSendResetEmail(usuario)}
+                          disabled={actionUserId === usuario.id}
+                          className="text-gray-700 hover:text-gray-900 disabled:opacity-50"
+                          title="Enviar correo de restablecimiento"
+                        >
+                          Reset
                         </button>
                         <button
                           onClick={() => deleteUsuario(usuario.id)}

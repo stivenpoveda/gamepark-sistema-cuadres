@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+propuesta-activacion-app-gamepark.html
+propuesta-activacion-app-gamepark.pdf
+.trae-*.js
