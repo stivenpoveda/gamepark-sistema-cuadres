@@ -10,6 +10,9 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import type { CuadreDiario, Usuario, PuntoDeVenta } from '@/types';
 
+const isComparableBankApprovedCuadre = (cuadre: { estado?: string | null }) =>
+  cuadre.estado === 'aprobado';
+
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -225,7 +228,9 @@ export default function SuperAdminDashboard() {
       const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
 
       acc.ventaTotal += Number(c.recaudo) || 0;
-      acc.datafono += Number(c.venta_tarjetas) || 0;
+      if (isComparableBankApprovedCuadre(c)) {
+        acc.datafono += Number(c.venta_tarjetas) || 0;
+      }
       acc.desembolsos += desembolsos;
       acc.efectivo += metrics.totalEfectivoEsperado;
       acc.consignaciones += consignaciones;

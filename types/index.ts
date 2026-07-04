@@ -32,6 +32,8 @@ export type GastoDiario = {
   descripcion: string;
   categoria: string;
   valor: number;
+  beneficiario?: string | null;
+  documento_beneficiario?: string | null;
   url_foto_factura?: string;
   fecha: string;
   registrado_por?: string;

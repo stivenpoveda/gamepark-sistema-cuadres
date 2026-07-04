@@ -81,6 +81,9 @@ const getComparableConsignacionTotal = (cuadre: {
   return Number(cuadre.valor_consignado) || 0;
 };
 
+const isComparableBankApprovedCuadre = (cuadre: { estado?: string | null }) =>
+  cuadre.estado === 'aprobado';
+
 export default function SuperadminReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -173,6 +176,10 @@ export default function SuperadminReportesPage() {
     return matchFecha && matchPdv;
   });
 
+  const cuadresAprobadosFiltrados = cuadresFiltrados.filter((c) =>
+    isComparableBankApprovedCuadre(c)
+  );
+
   const totals = cuadresFiltrados.reduce(
     (acc, c) => {
       const gastos = gastosByCuadreId[c.id] || 0;
@@ -194,7 +201,9 @@ export default function SuperadminReportesPage() {
       const consignaciones = getComparableConsignacionTotal(c);
 
       acc.ventaTotal += Number(c.recaudo) || 0;
-      acc.datafono += Number(c.venta_tarjetas) || 0;
+      if (isComparableBankApprovedCuadre(c)) {
+        acc.datafono += Number(c.venta_tarjetas) || 0;
+      }
       acc.desembolsos += desembolsos;
       acc.efectivo += metrics.totalEfectivoEsperado;
       acc.consignaciones += consignaciones;
@@ -456,7 +465,7 @@ export default function SuperadminReportesPage() {
       { header: 'Venta Datafono', key: 'ventaDatafono', width: 18 },
     ];
 
-    cuadresFiltrados.forEach((c) => {
+    cuadresAprobadosFiltrados.forEach((c) => {
       worksheet.addRow({
         pdv: c.punto_de_venta?.nombre || 'N/A',
         fecha: formatExcelDate(c.fecha),
@@ -612,7 +621,9 @@ export default function SuperadminReportesPage() {
       const pdv = c.punto_de_venta?.nombre || 'N/A';
       const key = `${pdvId}|${mes}`;
       const ventaTotal = Number(c.recaudo) || 0;
-      const datafono = Number(c.venta_tarjetas) || 0;
+      const datafono = isComparableBankApprovedCuadre(c)
+        ? Number(c.venta_tarjetas) || 0
+        : 0;
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
       const desembolsos = gastos + turneros;

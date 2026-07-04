@@ -15,7 +15,7 @@ import {
 } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
-import type { CuadreDiario, Usuario } from '@/types';
+import type { CuadreDiario, GastoDiario, Usuario } from '@/types';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
 
@@ -248,6 +248,20 @@ export default function CuadreDetalle() {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
 
+  const getGastoBeneficiarioDetalle = (gasto: GastoDiario) =>
+    [
+      gasto.beneficiario ? `Beneficiario: ${gasto.beneficiario}` : '',
+      gasto.documento_beneficiario ? `Doc: ${gasto.documento_beneficiario}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+  const getGastoDetalleCompleto = (gasto: GastoDiario) => {
+    const base = `${gasto.descripcion} - ${getGastoCategoriaLabel(gasto.categoria)}`;
+    const detalleBeneficiario = getGastoBeneficiarioDetalle(gasto);
+    return detalleBeneficiario ? `${base} | ${detalleBeneficiario}` : base;
+  };
+
   const openPdfPrintWindow = (html: string) => {
     const win = window.open('', '_blank');
     if (!win) {
@@ -398,7 +412,7 @@ export default function CuadreDetalle() {
   <div class="section">
     <div class="section-title">Gastos</div>
     ${(cuadre.gastos_diarios || [])
-      .map((g) => `<div class="row"><span>${escapeHtml(`${g.descripcion} - ${getGastoCategoriaLabel(g.categoria)}`)}</span><strong>${escapeHtml(formatCOP(g.valor))}</strong></div>`)
+      .map((g) => `<div class="row"><span>${escapeHtml(getGastoDetalleCompleto(g))}</span><strong>${escapeHtml(formatCOP(g.valor))}</strong></div>`)
       .join('') || '<div class="row"><span>Sin gastos registrados</span><strong>$0</strong></div>'}
   </div>
 
@@ -473,9 +487,10 @@ export default function CuadreDetalle() {
       cuadre.gastos_diarios.forEach((g) => {
         const categoria = getGastoCategoriaLabel(g.categoria || 'Otros');
         gastosPorCategoria[categoria] = (gastosPorCategoria[categoria] || 0) + (Number(g.valor) || 0);
-        if (g.descripcion) {
+        const detalle = getGastoDetalleCompleto(g);
+        if (detalle) {
           detallesPorCategoria[categoria] = detallesPorCategoria[categoria] || [];
-          detallesPorCategoria[categoria].push(g.descripcion);
+          detallesPorCategoria[categoria].push(detalle);
         }
       });
     }
@@ -719,11 +734,13 @@ export default function CuadreDetalle() {
         const categoria = getGastoCategoriaLabel(g.categoria || 'Otros');
         if (categoria === 'Anticipo a Contratistas y Otros') {
           creditoAnticipo += Number(g.valor) || 0;
-          if (g.descripcion) creditoAnticipoDetalles.push(g.descripcion);
+          const detalle = getGastoDetalleCompleto(g);
+          if (detalle) creditoAnticipoDetalles.push(detalle);
         }
         if (categoria === 'Reembolso de Caja Menor') {
           creditoReembolso += Number(g.valor) || 0;
-          if (g.descripcion) creditoReembolsoDetalles.push(g.descripcion);
+          const detalle = getGastoDetalleCompleto(g);
+          if (detalle) creditoReembolsoDetalles.push(detalle);
         }
       });
     }
@@ -1024,9 +1041,10 @@ export default function CuadreDetalle() {
       cuadre.gastos_diarios.forEach((g) => {
         const cat = getGastoCategoriaLabel(g.categoria || 'Otros');
         gastosPorCategoria[cat] = (gastosPorCategoria[cat] || 0) + (Number(g.valor) || 0);
-        if (g.descripcion) {
+        const detalle = getGastoDetalleCompleto(g);
+        if (detalle) {
           detallesPorCategoria[cat] = detallesPorCategoria[cat] || [];
-          detallesPorCategoria[cat].push(g.descripcion);
+          detallesPorCategoria[cat].push(detalle);
         }
       });
     }
@@ -1377,6 +1395,14 @@ export default function CuadreDetalle() {
                           <div>
                             <p className="font-medium text-gray-800">{g.descripcion}</p>
                             <p className="text-sm text-gray-600">{getGastoCategoriaLabel(g.categoria)}</p>
+                            {(g.beneficiario || g.documento_beneficiario) && (
+                              <div className="mt-1 text-sm text-gray-600">
+                                {g.beneficiario && <p>Beneficiario: {g.beneficiario}</p>}
+                                {g.documento_beneficiario && (
+                                  <p>NIT/Cédula: {g.documento_beneficiario}</p>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <p className="font-bold text-gray-900">{formatCOP(g.valor)}</p>
                         </div>

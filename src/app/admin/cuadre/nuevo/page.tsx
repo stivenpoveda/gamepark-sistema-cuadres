@@ -873,6 +873,8 @@ function CuadreWizardContent() {
           descripcion: newGasto.descripcion,
           categoria: normalizeGastoCategoria(newGasto.categoria || 'Otros'),
           valor: newGasto.valor,
+          beneficiario: (newGasto.beneficiario || '').trim() || null,
+          documento_beneficiario: (newGasto.documento_beneficiario || '').trim() || null,
           url_foto_factura: newGasto.url_foto_factura,
           fecha: cuadre.fecha,
           registrado_por: user.id,
@@ -1129,6 +1131,12 @@ function CuadreWizardContent() {
                       <div>
                         <p className="font-medium">{g.descripcion}</p>
                         <p className="text-sm text-gray-500">{getGastoCategoriaLabel(g.categoria)}</p>
+                        {(g.beneficiario || g.documento_beneficiario) && (
+                          <div className="mt-1 text-sm text-gray-600">
+                            {g.beneficiario && <p>Beneficiario: {g.beneficiario}</p>}
+                            {g.documento_beneficiario && <p>NIT/Cédula: {g.documento_beneficiario}</p>}
+                          </div>
+                        )}
                         {g.url_foto_factura && (
                           <img src={g.url_foto_factura} alt="Factura" className="w-20 h-20 object-cover rounded mt-2" />
                         )}
@@ -1737,6 +1745,28 @@ function CuadreWizardContent() {
                   value={newGasto.valor || ''}
                   onChange={(e) => setNewGasto({ ...newGasto, valor: Number(e.target.value) })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Beneficiario</label>
+                <input
+                  type="text"
+                  value={newGasto.beneficiario || ''}
+                  onChange={(e) => setNewGasto({ ...newGasto, beneficiario: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                  placeholder="Proveedor, persona o empresa"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">NIT o Cédula</label>
+                <input
+                  type="text"
+                  value={newGasto.documento_beneficiario || ''}
+                  onChange={(e) =>
+                    setNewGasto({ ...newGasto, documento_beneficiario: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                  placeholder="Número de documento"
                 />
               </div>
               <div>
