@@ -18,6 +18,8 @@ const toDateInputValue = (date: Date) => {
 
 const normalizeDateOnly = (value: string) => value.split('T')[0];
 const formatExcelDate = (value: string) => formatDate(normalizeDateOnly(value));
+const isComparableBankApprovedCuadre = (cuadre: { estado?: string | null }) =>
+  cuadre.estado === 'aprobado';
 
 const applyNumericFormat = (worksheet: ExcelJS.Worksheet, keys: string[]) => {
   keys.forEach((key) => {
@@ -137,9 +139,10 @@ export default function ReportesPage() {
 
       const consignaHoy = (c.consigna_hoy ?? true) === true;
       const consignaciones = consignaHoy ? Number(c.valor_consignado) || 0 : 0;
+      const datafono = isComparableBankApprovedCuadre(c) ? Number(c.venta_tarjetas) || 0 : 0;
 
       acc.ventaTotal += Number(c.recaudo) || 0;
-      acc.datafono += Number(c.venta_tarjetas) || 0;
+      acc.datafono += datafono;
       acc.desembolsos += desembolsos;
       acc.efectivo += metrics.totalEfectivoEsperado;
       acc.consignaciones += consignaciones;
@@ -178,6 +181,7 @@ export default function ReportesPage() {
     cuadresFiltrados.forEach((c) => {
       const gastos = gastosByCuadreId[c.id] || 0;
       const turneros = turnerosByCuadreId[c.id] || 0;
+      const datafono = isComparableBankApprovedCuadre(c) ? Number(c.venta_tarjetas) || 0 : 0;
       const metrics = calcCuadreMetrics({
         recaudo: c.recaudo,
         venta_tarjetas: c.venta_tarjetas,
@@ -195,7 +199,7 @@ export default function ReportesPage() {
         fecha: formatExcelDate(c.fecha),
         ventaTotal: Number(c.recaudo) || 0,
         valorGeneralAConsignar: Number(metrics.totalGeneralAConsignar) || 0,
-        ventaDatafono: Number(c.venta_tarjetas) || 0,
+        ventaDatafono: datafono,
         valorConsignado: Number(c.valor_consignado) || 0,
         deducciones: Number(gastos + turneros) || 0,
         pendiente: Number(c.consignacion_pendiente) || 0,
@@ -375,7 +379,11 @@ export default function ReportesPage() {
                     <tr key={cuadre.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.venta_tarjetas)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">
+                        {formatCOP(
+                          isComparableBankApprovedCuadre(cuadre) ? Number(cuadre.venta_tarjetas) || 0 : 0
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(desembolsos)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalEfectivoEsperado)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(consignaciones)}</td>
