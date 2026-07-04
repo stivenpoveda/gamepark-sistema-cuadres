@@ -137,7 +137,8 @@ export default function ReportesAdminBancosPage() {
       if (
         movement.tipo_movimiento === 'cuadre_aprobado' &&
         movement.cuadre_id &&
-        informativeOnlyCuadreIds.has(movement.cuadre_id)
+        informativeOnlyCuadreIds.has(movement.cuadre_id) &&
+        !isDatafonoMovement(movement)
       ) {
         return false;
       }
