@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP, getGastoCategoriaLabel, GASTO_CATEGORIA_TRANSPORTE_CODE, normalizeGastoCategoria } from '@/lib/utils';
+import {
+  formatCOP,
+  getGastoCategoriaLabel,
+  GASTO_CATEGORIA_TRANSPORTE_CODE,
+  getTodayString,
+  normalizeGastoCategoria,
+} from '@/lib/utils';
 import { Loader2, ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { GastoDiario, Usuario, PuntoDeVenta } from '@/types';
@@ -103,7 +109,7 @@ export default function GastosPage() {
     }
 
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayString();
       const { data: cuadreData, error: cuadreError } = await supabase
         .from('cuadres_diarios')
         .select('id')

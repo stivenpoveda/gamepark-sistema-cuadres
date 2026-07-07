@@ -84,6 +84,19 @@ const getComparableConsignacionTotal = (cuadre: {
 const isComparableBankApprovedCuadre = (cuadre: { estado?: string | null }) =>
   cuadre.estado === 'aprobado';
 
+type GastoDetalleReporte = {
+  categoria: string;
+  descripcion: string;
+  valor: number;
+  beneficiario?: string | null;
+  documento_beneficiario?: string | null;
+};
+
+type TurneroDetalleReporte = {
+  descripcion: string;
+  valor: number;
+};
+
 export default function SuperadminReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -93,7 +106,9 @@ export default function SuperadminReportesPage() {
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [puntosVenta, setPuntosVenta] = useState<PuntoDeVenta[]>([]);
   const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number> >({});
+  const [gastoDetallesByCuadreId, setGastoDetallesByCuadreId] = useState<Record<string, GastoDetalleReporte[]>>({});
   const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number> >({});
+  const [turneroDetallesByCuadreId, setTurneroDetallesByCuadreId] = useState<Record<string, TurneroDetalleReporte[]>>({});
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [pdvSeleccionado, setPdvSeleccionado] = useState<string>('');
@@ -122,8 +137,10 @@ export default function SuperadminReportesPage() {
           : Promise.resolve({ data: null, error: null }),
         supabase.from('puntos_de_venta').select('*'),
         supabase.from('cuadres_diarios').select('*').order('fecha', { ascending: false }),
-        supabase.from('gastos_diarios').select('cuadre_id,valor'),
-        supabase.from('pagos_turneros').select('cuadre_id,valor'),
+        supabase
+          .from('gastos_diarios')
+          .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario'),
+        supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario'),
       ]);
 
       setUser(userRes.data || null);
@@ -138,16 +155,35 @@ export default function SuperadminReportesPage() {
       setPuntosVenta(pdvRes.data || []);
 
       const gastosMap: Record<string, number> = {};
+      const gastoDetallesMap: Record<string, GastoDetalleReporte[]> = {};
       (gastosRes.data || []).forEach((g) => {
         gastosMap[g.cuadre_id] = (gastosMap[g.cuadre_id] || 0) + (Number(g.valor) || 0);
+        gastoDetallesMap[g.cuadre_id] = gastoDetallesMap[g.cuadre_id] || [];
+        gastoDetallesMap[g.cuadre_id].push({
+          categoria: getGastoCategoriaLabel(g.categoria || 'Otros'),
+          descripcion: String(g.descripcion || ''),
+          valor: Number(g.valor) || 0,
+          beneficiario: g.beneficiario || null,
+          documento_beneficiario: g.documento_beneficiario || null,
+        });
       });
       setGastosByCuadreId(gastosMap);
+      setGastoDetallesByCuadreId(gastoDetallesMap);
 
       const turnerosMap: Record<string, number> = {};
+      const turneroDetallesMap: Record<string, TurneroDetalleReporte[]> = {};
       (turnerosRes.data || []).forEach((t) => {
         turnerosMap[t.cuadre_id] = (turnerosMap[t.cuadre_id] || 0) + (Number(t.valor) || 0);
+        turneroDetallesMap[t.cuadre_id] = turneroDetallesMap[t.cuadre_id] || [];
+        const nombre = String(t.nombre_turnero || 'Turnero');
+        const horario = String(t.horario || '').trim();
+        turneroDetallesMap[t.cuadre_id].push({
+          descripcion: horario ? `${nombre} - ${horario}` : nombre,
+          valor: Number(t.valor) || 0,
+        });
       });
       setTurnerosByCuadreId(turnerosMap);
+      setTurneroDetallesByCuadreId(turneroDetallesMap);
 
       const today = new Date();
       const lastMonth = new Date(today);
@@ -237,6 +273,32 @@ export default function SuperadminReportesPage() {
     }, {})
   ).reduce((sum, v) => sum + (Number(v.pendiente) || 0), 0);
 
+  const renderDesembolsoDetalle = (cuadreId: string) => {
+    const gastos = gastoDetallesByCuadreId[cuadreId] || [];
+    const turneros = turneroDetallesByCuadreId[cuadreId] || [];
+
+    if (gastos.length === 0 && turneros.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-2 space-y-1 text-[11px] leading-4 text-gray-500">
+        {gastos.map((gasto, index) => (
+          <p key={`gasto-${cuadreId}-${index}`}>
+            {`Gasto: ${gasto.descripcion || 'Sin descripción'} | ${gasto.categoria} | ${formatCOP(gasto.valor)}`}
+            {gasto.beneficiario ? ` | Beneficiario: ${gasto.beneficiario}` : ''}
+            {gasto.documento_beneficiario ? ` | NIT/Cédula: ${gasto.documento_beneficiario}` : ''}
+          </p>
+        ))}
+        {turneros.map((turnero, index) => (
+          <p key={`turnero-${cuadreId}-${index}`}>
+            {`Turnero: ${turnero.descripcion} | ${formatCOP(turnero.valor)}`}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
   const exportarExcelGeneral = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('General');
@@ -317,6 +379,8 @@ export default function SuperadminReportesPage() {
       { header: 'Tipo', key: 'tipo', width: 14 },
       { header: 'Categoria', key: 'categoria', width: 28 },
       { header: 'Descripcion', key: 'descripcion', width: 42 },
+      { header: 'Beneficiario', key: 'beneficiario', width: 28 },
+      { header: 'NIT/Cedula', key: 'documentoBeneficiario', width: 22 },
       { header: 'Valor', key: 'valor', width: 16 },
     ];
 
@@ -327,11 +391,20 @@ export default function SuperadminReportesPage() {
     }
 
     const [gastosRes, turnerosRes] = await Promise.all([
-      supabase.from('gastos_diarios').select('cuadre_id,categoria,descripcion,valor').in('cuadre_id', cuadreIds),
+      supabase
+        .from('gastos_diarios')
+        .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
+        .in('cuadre_id', cuadreIds),
       supabase.from('pagos_turneros').select('cuadre_id,nombre_turnero,horario,valor').in('cuadre_id', cuadreIds),
     ]);
 
-    const gastosById = (gastosRes.data || []).reduce<Record<string, Array<{ categoria: string; descripcion: string; valor: number }>>>(
+    const gastosById = (gastosRes.data || []).reduce<Record<string, Array<{
+      categoria: string;
+      descripcion: string;
+      valor: number;
+      beneficiario?: string | null;
+      documento_beneficiario?: string | null;
+    }>>>(
       (acc, gasto: any) => {
         const cuadreId = String(gasto.cuadre_id || '');
         if (!cuadreId) return acc;
@@ -340,6 +413,8 @@ export default function SuperadminReportesPage() {
           categoria: getGastoCategoriaLabel(gasto.categoria || 'Otros'),
           descripcion: String(gasto.descripcion || ''),
           valor: Number(gasto.valor) || 0,
+          beneficiario: gasto.beneficiario || null,
+          documento_beneficiario: gasto.documento_beneficiario || null,
         });
         return acc;
       },
@@ -372,6 +447,8 @@ export default function SuperadminReportesPage() {
           tipo: 'Gasto',
           categoria: gasto.categoria,
           descripcion: gasto.descripcion,
+          beneficiario: gasto.beneficiario || '',
+          documentoBeneficiario: gasto.documento_beneficiario || '',
           valor: gasto.valor,
         });
       });
@@ -383,6 +460,8 @@ export default function SuperadminReportesPage() {
           tipo: 'Turnero',
           categoria: 'Turneros',
           descripcion: turnero.descripcion,
+          beneficiario: '',
+          documentoBeneficiario: '',
           valor: turnero.valor,
         });
       });
@@ -945,6 +1024,7 @@ export default function SuperadminReportesPage() {
                         <p className="font-semibold text-gray-900">
                           {formatCOP((gastosByCuadreId[cuadre.id] || 0) + (turnerosByCuadreId[cuadre.id] || 0))}
                         </p>
+                        {renderDesembolsoDetalle(cuadre.id)}
                       </div>
                       <div>
                         <p className="text-gray-600">Efectivo</p>
@@ -989,7 +1069,7 @@ export default function SuperadminReportesPage() {
                   <th className="px-3 sm:px-6 py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 w-[110px] whitespace-nowrap">Fecha</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Venta Total</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[150px] whitespace-nowrap">Desembolsos</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden lg:table-cell w-[320px] whitespace-nowrap">Desembolsos</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden xl:table-cell w-[150px] whitespace-nowrap">Efectivo</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden 2xl:table-cell w-[160px] whitespace-nowrap">Consignaciones</th>
                   <th className="px-3 sm:px-6 py-3 text-right text-xs sm:text-sm font-semibold text-gray-700 hidden sm:table-cell w-[160px] whitespace-nowrap">Saldo en Caja</th>
@@ -1028,7 +1108,10 @@ export default function SuperadminReportesPage() {
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm whitespace-nowrap">{formatDate(cuadre.fecha)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.recaudo)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.venta_tarjetas)}</td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden lg:table-cell">{formatCOP(desembolsos)}</td>
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right hidden lg:table-cell align-top">
+                          <div className="whitespace-nowrap">{formatCOP(desembolsos)}</div>
+                          {renderDesembolsoDetalle(cuadre.id)}
+                        </td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden xl:table-cell">{formatCOP(metrics.totalEfectivoEsperado)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden 2xl:table-cell">{formatCOP(consignaciones)}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-right whitespace-nowrap hidden sm:table-cell">{formatCOP(cuadre.consignacion_pendiente)}</td>

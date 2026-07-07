@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { calcCuadreMetrics, formatCOP, formatDate } from '@/lib/utils';
+import { calcCuadreMetrics, formatCOP, formatDate, getGastoCategoriaLabel } from '@/lib/utils';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta } from '@/types';
@@ -27,6 +27,19 @@ const applyNumericFormat = (worksheet: ExcelJS.Worksheet, keys: string[]) => {
   });
 };
 
+type GastoDetalleReporte = {
+  categoria: string;
+  descripcion: string;
+  valor: number;
+  beneficiario?: string | null;
+  documento_beneficiario?: string | null;
+};
+
+type TurneroDetalleReporte = {
+  descripcion: string;
+  valor: number;
+};
+
 export default function ReportesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -34,7 +47,9 @@ export default function ReportesPage() {
   const [puntoVenta, setPuntoVenta] = useState<PuntoDeVenta | null>(null);
   const [cuadres, setCuadres] = useState<CuadreDiario[]>([]);
   const [gastosByCuadreId, setGastosByCuadreId] = useState<Record<string, number>>({});
+  const [gastoDetallesByCuadreId, setGastoDetallesByCuadreId] = useState<Record<string, GastoDetalleReporte[]>>({});
   const [turnerosByCuadreId, setTurnerosByCuadreId] = useState<Record<string, number>>({});
+  const [turneroDetallesByCuadreId, setTurneroDetallesByCuadreId] = useState<Record<string, TurneroDetalleReporte[]>>({});
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
 
@@ -75,28 +90,52 @@ export default function ReportesPage() {
         const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
         if (cuadreIds.length > 0) {
           const [gastosRes, turnerosRes] = await Promise.all([
-            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
-            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+            supabase
+              .from('gastos_diarios')
+              .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
+              .in('cuadre_id', cuadreIds),
+            supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', cuadreIds),
           ]);
 
           const gastosMap: Record<string, number> = {};
+          const gastoDetallesMap: Record<string, GastoDetalleReporte[]> = {};
           (gastosRes.data || []).forEach((g: any) => {
             const id = g.cuadre_id as string | undefined;
             if (!id) return;
             gastosMap[id] = (gastosMap[id] || 0) + (Number(g.valor) || 0);
+            gastoDetallesMap[id] = gastoDetallesMap[id] || [];
+            gastoDetallesMap[id].push({
+              categoria: getGastoCategoriaLabel(g.categoria || 'Otros'),
+              descripcion: String(g.descripcion || ''),
+              valor: Number(g.valor) || 0,
+              beneficiario: g.beneficiario || null,
+              documento_beneficiario: g.documento_beneficiario || null,
+            });
           });
           setGastosByCuadreId(gastosMap);
+          setGastoDetallesByCuadreId(gastoDetallesMap);
 
           const turnerosMap: Record<string, number> = {};
+          const turneroDetallesMap: Record<string, TurneroDetalleReporte[]> = {};
           (turnerosRes.data || []).forEach((t: any) => {
             const id = t.cuadre_id as string | undefined;
             if (!id) return;
             turnerosMap[id] = (turnerosMap[id] || 0) + (Number(t.valor) || 0);
+            const nombre = String(t.nombre_turnero || 'Turnero');
+            const horario = String(t.horario || '').trim();
+            turneroDetallesMap[id] = turneroDetallesMap[id] || [];
+            turneroDetallesMap[id].push({
+              descripcion: horario ? `${nombre} - ${horario}` : nombre,
+              valor: Number(t.valor) || 0,
+            });
           });
           setTurnerosByCuadreId(turnerosMap);
+          setTurneroDetallesByCuadreId(turneroDetallesMap);
         } else {
           setGastosByCuadreId({});
+          setGastoDetallesByCuadreId({});
           setTurnerosByCuadreId({});
+          setTurneroDetallesByCuadreId({});
         }
       }
 
@@ -162,6 +201,52 @@ export default function ReportesPage() {
     return acc;
   }, null)?.pendiente || 0;
 
+  const renderDesembolsoDetalle = (cuadreId: string) => {
+    const gastos = gastoDetallesByCuadreId[cuadreId] || [];
+    const turneros = turneroDetallesByCuadreId[cuadreId] || [];
+
+    if (gastos.length === 0 && turneros.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-2 space-y-1 text-[11px] leading-4 text-gray-500">
+        {gastos.map((gasto, index) => (
+          <p key={`gasto-${cuadreId}-${index}`}>
+            {`Gasto: ${gasto.descripcion || 'Sin descripción'} | ${gasto.categoria} | ${formatCOP(gasto.valor)}`}
+            {gasto.beneficiario ? ` | Beneficiario: ${gasto.beneficiario}` : ''}
+            {gasto.documento_beneficiario ? ` | NIT/Cédula: ${gasto.documento_beneficiario}` : ''}
+          </p>
+        ))}
+        {turneros.map((turnero, index) => (
+          <p key={`turnero-${cuadreId}-${index}`}>
+            {`Turnero: ${turnero.descripcion} | ${formatCOP(turnero.valor)}`}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  const getDesembolsoDetalleExport = (cuadreId: string) => {
+    const gastos = gastoDetallesByCuadreId[cuadreId] || [];
+    const turneros = turneroDetallesByCuadreId[cuadreId] || [];
+
+    return [
+      ...gastos.map((gasto) =>
+        [
+          `Gasto: ${gasto.descripcion || 'Sin descripción'}`,
+          gasto.categoria,
+          `Valor: ${formatCOP(gasto.valor)}`,
+          gasto.beneficiario ? `Beneficiario: ${gasto.beneficiario}` : '',
+          gasto.documento_beneficiario ? `NIT/Cédula: ${gasto.documento_beneficiario}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ')
+      ),
+      ...turneros.map((turnero) => `Turnero: ${turnero.descripcion} | Valor: ${formatCOP(turnero.valor)}`),
+    ].join(' || ');
+  };
+
   const exportarExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Cuadres');
@@ -173,6 +258,7 @@ export default function ReportesPage() {
       { header: 'Venta Datafono', key: 'ventaDatafono', width: 15 },
       { header: 'Valor Consignado', key: 'valorConsignado', width: 18 },
       { header: 'Deducciones (Gastos + Turneros)', key: 'deducciones', width: 22 },
+      { header: 'Detalle Desembolsos', key: 'detalleDesembolsos', width: 80 },
       { header: 'Pendiente', key: 'pendiente', width: 15 },
       { header: 'Total Físico', key: 'totalFisico', width: 15 },
       { header: 'Estado', key: 'estado', width: 15 },
@@ -202,6 +288,7 @@ export default function ReportesPage() {
         ventaDatafono: datafono,
         valorConsignado: Number(c.valor_consignado) || 0,
         deducciones: Number(gastos + turneros) || 0,
+        detalleDesembolsos: getDesembolsoDetalleExport(c.id),
         pendiente: Number(c.consignacion_pendiente) || 0,
         totalFisico: Number(c.total_fisico) || 0,
         estado: c.estado,
@@ -349,7 +436,7 @@ export default function ReportesPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700 w-[120px] whitespace-nowrap">Fecha</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Venta Total</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[140px] whitespace-nowrap">Datafono</th>
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[170px] whitespace-nowrap">Desembolsos</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[320px] whitespace-nowrap">Desembolsos</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[150px] whitespace-nowrap">Efectivo</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Consignaciones</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-[160px] whitespace-nowrap">Saldo en Caja</th>
@@ -384,7 +471,10 @@ export default function ReportesPage() {
                           isComparableBankApprovedCuadre(cuadre) ? Number(cuadre.venta_tarjetas) || 0 : 0
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(desembolsos)}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-right align-top">
+                        <div className="whitespace-nowrap">{formatCOP(desembolsos)}</div>
+                        {renderDesembolsoDetalle(cuadre.id)}
+                      </td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(metrics.totalEfectivoEsperado)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(consignaciones)}</td>
                       <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">{formatCOP(cuadre.consignacion_pendiente)}</td>

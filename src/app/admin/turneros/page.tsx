@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { formatCOP } from '@/lib/utils';
+import { formatCOP, getTodayString } from '@/lib/utils';
 import { Loader2, ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { PagoTurnero, Usuario, PuntoDeVenta } from '@/types';
@@ -74,7 +74,7 @@ export default function TurnerosPage() {
   const handleAddTurnero = async () => {
     if (!user?.punto_de_venta_id || !newTurnero.nombre_turnero || !newTurnero.valor) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayString();
     const { data: cuadreData } = await supabase
       .from('cuadres_diarios')
       .select('id')
