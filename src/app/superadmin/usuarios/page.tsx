@@ -50,23 +50,43 @@ export default function UsuariosPage() {
     e.preventDefault();
     try {
       if (editingUser) {
+        const normalizedEmail = newUser.email.trim().toLowerCase();
+        const previousEmail = String(editingUser.email || '').trim().toLowerCase();
+        const emailChanged = normalizedEmail !== previousEmail;
+
+        if (emailChanged) {
+          setActionUserId(editingUser.id);
+          await authorizedJsonFetch('/api/superadmin/usuarios/email', {
+            method: 'PATCH',
+            body: JSON.stringify({
+              userId: editingUser.id,
+              email: normalizedEmail,
+            }),
+          });
+          setActionUserId('');
+        }
+
+        const payload: Record<string, unknown> = {
+          nombre: newUser.nombre,
+          rol: newUser.rol,
+          punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
+        };
+        if (!emailChanged) {
+          payload.email = normalizedEmail;
+        }
+
         const { error } = await supabase
           .from('usuarios')
-          .update({
-            nombre: newUser.nombre,
-            email: newUser.email,
-            rol: newUser.rol,
-            punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
-          })
+          .update(payload)
           .eq('id', editingUser.id);
         if (error) throw error;
-        toast.success('Usuario actualizado');
+        toast.success(emailChanged ? 'Usuario actualizado. Revisa el correo para confirmar el cambio.' : 'Usuario actualizado');
       } else {
         await authorizedJsonFetch('/api/crear-usuario', {
           method: 'POST',
           body: JSON.stringify({
             nombre: newUser.nombre,
-            email: newUser.email,
+            email: newUser.email.trim().toLowerCase(),
             password: newUser.password,
             rol: newUser.rol,
             punto_de_venta_id: newUser.rol === 'admin_pdv' ? newUser.punto_de_venta_id || null : null,
@@ -98,6 +118,36 @@ export default function UsuariosPage() {
       });
     } catch (error: any) {
       toast.error(error.message || 'Error');
+    }
+  };
+
+  const handleChangeEmail = async (usuario: Usuario) => {
+    const nextEmail = window.prompt(`Nuevo correo para ${usuario.nombre} (${usuario.email}):`);
+    if (!nextEmail) return;
+    const normalizedEmail = nextEmail.trim().toLowerCase();
+    if (!normalizedEmail) return;
+    if (normalizedEmail === String(usuario.email || '').trim().toLowerCase()) {
+      toast.error('El correo es el mismo');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se solicitará el cambio de correo a "${normalizedEmail}". Es posible que requiera confirmación por email. ¿Deseas continuar?`
+    );
+    if (!confirmed) return;
+
+    setActionUserId(usuario.id);
+    try {
+      await authorizedJsonFetch('/api/superadmin/usuarios/email', {
+        method: 'PATCH',
+        body: JSON.stringify({ userId: usuario.id, email: normalizedEmail }),
+      });
+      setUsuarios((prev) => prev.map((u) => (u.id === usuario.id ? { ...u, email: normalizedEmail } : u)));
+      toast.success('Cambio de correo solicitado. Revisa el correo para confirmar.');
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo solicitar el cambio de correo');
+    } finally {
+      setActionUserId('');
     }
   };
 
@@ -302,6 +352,14 @@ export default function UsuariosPage() {
                           title="Enviar correo de restablecimiento"
                         >
                           Reset
+                        </button>
+                        <button
+                          onClick={() => handleChangeEmail(usuario)}
+                          disabled={actionUserId === usuario.id}
+                          className="text-gray-700 hover:text-gray-900 disabled:opacity-50"
+                          title="Cambiar correo"
+                        >
+                          Correo
                         </button>
                         <button
                           onClick={() => deleteUsuario(usuario.id)}
