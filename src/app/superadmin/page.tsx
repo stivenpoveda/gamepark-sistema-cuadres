@@ -47,17 +47,19 @@ export default function SuperAdminDashboard() {
 
       if (!session) {
         router.replace('/login?reason=session');
+        setLoading(false);
         return;
       }
 
       const { data: userData, error: userError } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('email', session.user.email)
+        .eq('id', session.user.id)
         .single();
 
       if (userError || !userData) {
         router.replace('/login?reason=profile');
+        setLoading(false);
         return;
       }
 

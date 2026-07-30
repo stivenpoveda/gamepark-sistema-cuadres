@@ -185,7 +185,7 @@ function CuadreWizardContent() {
         const { data: userData, error: userError } = await supabase
           .from('usuarios')
           .select('*')
-          .eq('email', session.user.email)
+          .eq('id', session.user.id)
           .single();
 
         if (userError || !userData) {

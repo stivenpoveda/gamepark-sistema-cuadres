@@ -39,7 +39,7 @@ export default function CuadreDetalle() {
         const { data: userData } = await supabase
           .from('usuarios')
           .select('*')
-          .eq('email', session.user.email)
+          .eq('id', session.user.id)
           .single();
         
         setUser(userData);

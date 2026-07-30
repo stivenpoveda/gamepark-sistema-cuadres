@@ -62,7 +62,7 @@ export default function ReportesPage() {
       if (!session) return;
 
       const [userRes, pdvRes] = await Promise.all([
-        supabase.from('usuarios').select('*').eq('email', session.user.email).single(),
+        supabase.from('usuarios').select('*').eq('id', session.user.id).single(),
         supabase.from('puntos_de_venta').select('*')
       ]);
       
