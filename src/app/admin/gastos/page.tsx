@@ -254,8 +254,8 @@ export default function GastosPage() {
         </div>
 
         {showModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md my-8">
               <h3 className="text-xl font-semibold mb-4">Nuevo Gasto</h3>
               <div className="space-y-4">
                 <div>
