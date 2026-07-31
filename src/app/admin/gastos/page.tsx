@@ -5,7 +5,9 @@ import { supabase } from '@/lib/supabase';
 import {
   formatCOP,
   getGastoCategoriaLabel,
+  GASTO_CATEGORIA_MAQUINARIA_CODE,
   GASTO_CATEGORIA_TRANSPORTE_CODE,
+  GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE,
   getTodayString,
   normalizeGastoCategoria,
 } from '@/lib/utils';
@@ -21,7 +23,12 @@ const categoriasGastos = [
   { value: 'Pagos Tecnico - Auditor Mecanico', label: 'Pagos Tecnico - Auditor Mecanico' },
   { value: 'Servicio Publicos y Telefono', label: 'Servicio Publicos y Telefono' },
   { value: 'Turnos', label: 'Turnos' },
-  { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos Maquinaria y Repuestos' },
+  { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos' },
+  { value: GASTO_CATEGORIA_MAQUINARIA_CODE, label: 'Maquinaria y Repuestos' },
+  {
+    value: GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE,
+    label: 'Transporte, Fletes y Acarreos / Maquinaria y Repuestos (Anterior)',
+  },
   { value: 'Fiestas', label: 'Fiestas' },
   { value: 'Abonos fiestas consignadas', label: 'Abonos fiestas consignadas' },
   { value: 'Compra redencion', label: 'Compra redencion' },

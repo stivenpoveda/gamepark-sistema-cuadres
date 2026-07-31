@@ -90,22 +90,34 @@ export const calcCuadreMetrics = (input: {
   };
 };
 
-export const GASTO_CATEGORIA_TRANSPORTE_CODE = 'Transporte/Fletes/Acarreos/Maq/Repuestos';
-export const GASTO_CATEGORIA_TRANSPORTE_LABEL = 'Transporte, Fletes y Acarreos Maquinaria y Repuestos';
+export const GASTO_CATEGORIA_TRANSPORTE_CODE = 'Transporte/Fletes/Acarreos';
+export const GASTO_CATEGORIA_TRANSPORTE_LABEL = 'Transporte, Fletes y Acarreos';
+
+export const GASTO_CATEGORIA_MAQUINARIA_CODE = 'Maquinaria/Repuestos';
+export const GASTO_CATEGORIA_MAQUINARIA_LABEL = 'Maquinaria y Repuestos';
+
+export const GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE = 'Transporte/Fletes/Acarreos/Maq/Repuestos';
+export const GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_LABEL =
+  'Transporte, Fletes y Acarreos / Maquinaria y Repuestos';
 
 export const normalizeGastoCategoria = (categoria: unknown) => {
   const raw = String(categoria ?? '').trim();
   if (!raw) return 'Otros';
   if (raw === GASTO_CATEGORIA_TRANSPORTE_CODE) return GASTO_CATEGORIA_TRANSPORTE_CODE;
+  if (raw === GASTO_CATEGORIA_MAQUINARIA_CODE) return GASTO_CATEGORIA_MAQUINARIA_CODE;
+  if (raw === GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE)
+    return GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE;
 
   const simplified = raw.toLowerCase().replace(/\s+/g, ' ');
-  const isTransporte =
+  const mentionsTransporte =
     simplified.includes('transporte') &&
     (simplified.includes('fletes') || simplified.includes('flete')) &&
-    simplified.includes('acarreos') &&
-    simplified.includes('repuestos');
+    simplified.includes('acarreos');
+  const mentionsMaquinaria = simplified.includes('maquinaria') || simplified.includes('repuestos');
 
-  if (isTransporte) return GASTO_CATEGORIA_TRANSPORTE_CODE;
+  if (mentionsTransporte && mentionsMaquinaria) return GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE;
+  if (mentionsTransporte) return GASTO_CATEGORIA_TRANSPORTE_CODE;
+  if (mentionsMaquinaria) return GASTO_CATEGORIA_MAQUINARIA_CODE;
 
   return raw.length > 50 ? raw.slice(0, 50) : raw;
 };
@@ -113,6 +125,9 @@ export const normalizeGastoCategoria = (categoria: unknown) => {
 export const getGastoCategoriaLabel = (categoria: unknown) => {
   const normalized = normalizeGastoCategoria(categoria);
   if (normalized === GASTO_CATEGORIA_TRANSPORTE_CODE) return GASTO_CATEGORIA_TRANSPORTE_LABEL;
+  if (normalized === GASTO_CATEGORIA_MAQUINARIA_CODE) return GASTO_CATEGORIA_MAQUINARIA_LABEL;
+  if (normalized === GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE)
+    return GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_LABEL;
   return normalized;
 };
 
