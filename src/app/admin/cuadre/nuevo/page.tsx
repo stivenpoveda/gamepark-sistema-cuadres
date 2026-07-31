@@ -14,7 +14,6 @@ import {
   getTodayString,
   GASTO_CATEGORIA_MAQUINARIA_CODE,
   GASTO_CATEGORIA_TRANSPORTE_CODE,
-  GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE,
   normalizeGastoCategoria,
   serializeConsignacionMetadata,
   type CuentaConsignacionPredefinida,
@@ -34,10 +33,6 @@ const categoriasGastos = [
   { value: 'Turnos', label: 'Turnos' },
   { value: GASTO_CATEGORIA_TRANSPORTE_CODE, label: 'Transporte, Fletes y Acarreos' },
   { value: GASTO_CATEGORIA_MAQUINARIA_CODE, label: 'Maquinaria y Repuestos' },
-  {
-    value: GASTO_CATEGORIA_TRANSPORTE_MAQUINARIA_LEGACY_CODE,
-    label: 'Transporte, Fletes y Acarreos / Maquinaria y Repuestos (Anterior)',
-  },
   { value: 'Fiestas', label: 'Fiestas' },
   { value: 'Abonos fiestas consignadas', label: 'Abonos fiestas consignadas' },
   { value: 'Compra redencion', label: 'Compra redencion' },
