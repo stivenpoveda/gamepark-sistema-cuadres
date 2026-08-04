@@ -178,6 +178,7 @@ export const CUENTAS_CONSIGNACION: CuentaConsignacionPredefinida[] = [
   { id: 'bogota-657000972', banco: 'Banco Bogota', numeroCuenta: '657000972', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
   { id: 'davivienda-2669997203', banco: 'Davivienda', numeroCuenta: '2669997203', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
   { id: 'davivienda-260012-5575', banco: 'Davivienda', numeroCuenta: '260012-5575', tipoCuenta: 'Ahorros', titular: 'DIVERSIONES DE COLOMBIA' },
+  { id: 'davivienda-008100227746', banco: 'Davivienda', numeroCuenta: '008100227746', tipoCuenta: 'Ahorros', titular: 'ALEXANDRA ARENAS' },
   { id: 'occidente-22584-6112', banco: 'B. occidente', numeroCuenta: '22584-6112', tipoCuenta: 'Corriente', titular: 'DIVERSIONES DE COLOMBIA' },
   { id: 'davidarias-bogota-14207-6025', banco: 'Banco Bogota', numeroCuenta: '14207-6025', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
   { id: 'davidarias-bancolombia-5142201-8682', banco: 'Bancolombia', numeroCuenta: '5142201-8682', tipoCuenta: 'Ahorros', titular: 'DAVID ARIAS' },
