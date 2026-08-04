@@ -402,9 +402,17 @@ function CuadreWizardContent() {
     init();
   }, [router, fechaSeleccionada]);
 
-  const saveCuadre = async (updates: Partial<CuadreDiario>) => {
+  const saveCuadre = async (
+    updates: Partial<CuadreDiario>,
+    options?: {
+      background?: boolean;
+    }
+  ) => {
     if (!cuadre?.id) return;
-    setSaving(true);
+    const shouldToggleSaving = options?.background !== true;
+    if (shouldToggleSaving) {
+      setSaving(true);
+    }
     try {
       const normalizedUpdates: any = { ...(updates as any) };
       if (normalizedUpdates.venta_confiteria !== undefined && normalizedUpdates.recibos === undefined) {
@@ -474,7 +482,9 @@ function CuadreWizardContent() {
       console.error('Error en saveCuadre:', error);
       toast.error('Error al guardar');
     } finally {
-      setSaving(false);
+      if (shouldToggleSaving) {
+        setSaving(false);
+      }
     }
   };
 
@@ -1059,17 +1069,18 @@ function CuadreWizardContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valor Consignación Pendiente (días anteriores)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor Consignación Pendiente (días anteriores)
+                </label>
                 <input
                   type="number"
                   value={pendienteArrastreActual === 0 ? '' : pendienteArrastreActual}
-                  onChange={(e) => {
-                    const value = Number(e.target.value) || 0;
-                    setPendienteArrastreActual(value);
-                    setLocalCuadre({ ...localCuadre, consignacion_pendiente: value });
-                  }}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  disabled
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Este valor viene del pendiente del cierre anterior y no debe modificarse desde el PDV.
+                </p>
               </div>
               <div className="p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-700">Venta Sistema Total</p>
@@ -1609,7 +1620,12 @@ function CuadreWizardContent() {
                       type="text"
                       value={localCuadre?.nombre_administradora || ''}
                       onChange={(e) => setLocalCuadre({ ...localCuadre, nombre_administradora: e.target.value })}
-                      onBlur={() => saveCuadre({ nombre_administradora: localCuadre?.nombre_administradora || '' })}
+                      onBlur={() =>
+                        saveCuadre(
+                          { nombre_administradora: localCuadre?.nombre_administradora || '' },
+                          { background: true }
+                        )
+                      }
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                       placeholder="Nombre de la administradora"
                     />
@@ -1621,7 +1637,12 @@ function CuadreWizardContent() {
                       inputMode="numeric"
                       value={localCuadre?.cedula_administradora || ''}
                       onChange={(e) => setLocalCuadre({ ...localCuadre, cedula_administradora: e.target.value })}
-                      onBlur={() => saveCuadre({ cedula_administradora: localCuadre?.cedula_administradora || '' })}
+                      onBlur={() =>
+                        saveCuadre(
+                          { cedula_administradora: localCuadre?.cedula_administradora || '' },
+                          { background: true }
+                        )
+                      }
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                       placeholder="Número de cédula"
                     />
