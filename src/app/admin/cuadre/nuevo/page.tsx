@@ -88,10 +88,8 @@ function CuadreWizardContent() {
   const [gastos, setGastos] = useState<GastoDiario[]>([]);
   const [turneros, setTurneros] = useState<PagoTurnero[]>([]);
   const [showGastoModal, setShowGastoModal] = useState(false);
-  const [showTurneroModal, setShowTurneroModal] = useState(false);
   const [showConsignacionModal, setShowConsignacionModal] = useState(false);
   const [newGasto, setNewGasto] = useState<Partial<GastoDiario>>({});
-  const [newTurnero, setNewTurnero] = useState<Partial<PagoTurnero>>({});
   const [consignacionCompleta, setConsignacionCompleta] = useState(true);
   const [valorConsignadoInput, setValorConsignadoInput] = useState<number | ''>('');
   const [nuevoPendienteConsignacion, setNuevoPendienteConsignacion] = useState<number | null>(null);
@@ -918,56 +916,6 @@ function CuadreWizardContent() {
     }
   };
 
-  const handleAddTurnero = async () => {
-    if (!cuadre?.id) return;
-    if (!newTurnero.nombre_turnero || !newTurnero.valor) {
-      toast.error('Completa el nombre y el valor del turnero');
-      return;
-    }
-    if (!user?.id) {
-      toast.error('Sesión no lista. Recarga la página e intenta de nuevo.');
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('pagos_turneros')
-        .insert({
-          cuadre_id: cuadre.id,
-          nombre_turnero: newTurnero.nombre_turnero,
-          valor: newTurnero.valor,
-          horario: newTurnero.horario,
-          url_foto_soporte: newTurnero.url_foto_soporte,
-          fecha: cuadre.fecha,
-          registrado_por: user.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      if (!data) throw new Error('No se pudo guardar el turnero');
-
-      setTurneros((prev) => [...prev, data]);
-      setNewTurnero({});
-      setShowTurneroModal(false);
-      toast.success('Turnero agregado');
-    } catch (error: any) {
-      console.error('Error al agregar turnero:', error);
-      toast.error(`Error al agregar turnero: ${error?.message || 'Intenta de nuevo'}`);
-    }
-  };
-
-  const handleDeleteTurnero = async (id: string) => {
-    try {
-      const { error } = await supabase.from('pagos_turneros').delete().eq('id', id);
-      if (error) throw error;
-      setTurneros((prev) => prev.filter((t) => t.id !== id));
-    } catch (error: any) {
-      console.error('Error al eliminar turnero:', error);
-      toast.error(`Error al eliminar turnero: ${error?.message || 'Intenta de nuevo'}`);
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1125,7 +1073,7 @@ function CuadreWizardContent() {
           {step === 4 && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Paso 4: Gastos y Turneros</h2>
+                <h2 className="text-xl font-semibold">Paso 4: Gastos</h2>
               </div>
 
               <div className="space-y-4">
@@ -1172,43 +1120,16 @@ function CuadreWizardContent() {
                 </div>
               </div>
 
-              <div className="space-y-4 pt-6 border-t">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-medium">Turneros</h3>
-                  <button
-                    onClick={() => setShowTurneroModal(true)}
-                    className="px-4 py-2 bg-primary text-white rounded-lg"
-                  >
-                    + Agregar Turnero
-                  </button>
+              {totalTurneros > 0 && (
+                <div className="p-4 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
+                  <p className="text-sm font-medium text-gray-700">
+                    Turneros registrados (histórico): {formatCOP(totalTurneros)}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Estos turneros pertenecen a cuadres anteriores y se mantienen para el cálculo.
+                  </p>
                 </div>
-                <div className="space-y-3">
-                  {turneros.map((t) => (
-                    <div key={t.id} className="p-4 border rounded-lg flex justify-between items-center">
-                      <div>
-                        <p className="font-medium">{t.nombre_turnero}</p>
-                        {t.horario && <p className="text-sm text-gray-500">{t.horario}</p>}
-                        {t.url_foto_soporte && (
-                          <img src={t.url_foto_soporte} alt="Soporte" className="w-20 h-20 object-cover rounded mt-2" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <p className="font-bold">{formatCOP(t.valor)}</p>
-                        <button
-                          onClick={() => handleDeleteTurnero(t.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-700">Total Turneros</p>
-                  <p className="text-xl font-bold">{formatCOP(totalTurneros)}</p>
-                </div>
-              </div>
+              )}
 
               <div className="p-4 bg-yellow-50 rounded-lg">
                 <p className="text-sm text-yellow-700">Venta Datafono</p>
@@ -1811,67 +1732,6 @@ function CuadreWizardContent() {
               </button>
               <button
                 onClick={handleAddGasto}
-                className="px-4 py-2 bg-primary text-white rounded-lg"
-              >
-                Agregar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showTurneroModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md my-8">
-            <h3 className="text-xl font-semibold mb-4">Agregar Turnero</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Turnero</label>
-                <input
-                  type="text"
-                  value={newTurnero.nombre_turnero || ''}
-                  onChange={(e) => setNewTurnero({ ...newTurnero, nombre_turnero: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cédula</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={newTurnero.horario || ''}
-                  onChange={(e) => setNewTurnero({ ...newTurnero, horario: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
-                <input
-                  type="number"
-                  value={newTurnero.valor || ''}
-                  onChange={(e) => setNewTurnero({ ...newTurnero, valor: Number(e.target.value) })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Foto Soporte</label>
-                <UploadFoto
-                  bucket="soportes"
-                  currentUrl={newTurnero.url_foto_soporte}
-                  onUpload={(url) => setNewTurnero({ ...newTurnero, url_foto_soporte: url })}
-                  onRemove={() => setNewTurnero({ ...newTurnero, url_foto_soporte: undefined })}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => setShowTurneroModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleAddTurnero}
                 className="px-4 py-2 bg-primary text-white rounded-lg"
               >
                 Agregar

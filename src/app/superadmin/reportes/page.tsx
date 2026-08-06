@@ -95,6 +95,8 @@ type GastoDetalleReporte = {
 type TurneroDetalleReporte = {
   descripcion: string;
   valor: number;
+  beneficiario?: string | null;
+  documento_beneficiario?: string | null;
 };
 
 export default function SuperadminReportesPage() {
@@ -178,8 +180,10 @@ export default function SuperadminReportesPage() {
         const nombre = String(t.nombre_turnero || 'Turnero');
         const horario = String(t.horario || '').trim();
         turneroDetallesMap[t.cuadre_id].push({
-          descripcion: horario ? `${nombre} - ${horario}` : nombre,
+          descripcion: '',
           valor: Number(t.valor) || 0,
+          beneficiario: nombre,
+          documento_beneficiario: horario || null,
         });
       });
       setTurnerosByCuadreId(turnerosMap);
@@ -421,7 +425,12 @@ export default function SuperadminReportesPage() {
       {}
     );
 
-    const turnerosById = (turnerosRes.data || []).reduce<Record<string, Array<{ descripcion: string; valor: number }>>>(
+    const turnerosById = (turnerosRes.data || []).reduce<Record<string, Array<{
+      descripcion: string;
+      valor: number;
+      beneficiario?: string | null;
+      documento_beneficiario?: string | null;
+    }>>>(
       (acc, turnero: any) => {
         const cuadreId = String(turnero.cuadre_id || '');
         if (!cuadreId) return acc;
@@ -429,8 +438,10 @@ export default function SuperadminReportesPage() {
         const nombre = String(turnero.nombre_turnero || 'Turnero');
         const horario = String(turnero.horario || '').trim();
         acc[cuadreId].push({
-          descripcion: horario ? `${nombre} - ${horario}` : nombre,
+          descripcion: '',
           valor: Number(turnero.valor) || 0,
+          beneficiario: nombre,
+          documento_beneficiario: horario || null,
         });
         return acc;
       },
@@ -460,8 +471,8 @@ export default function SuperadminReportesPage() {
           tipo: 'Turnero',
           categoria: 'Turneros',
           descripcion: turnero.descripcion,
-          beneficiario: '',
-          documentoBeneficiario: '',
+          beneficiario: turnero.beneficiario || '',
+          documentoBeneficiario: turnero.documento_beneficiario || '',
           valor: turnero.valor,
         });
       });

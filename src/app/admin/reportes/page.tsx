@@ -38,6 +38,8 @@ type GastoDetalleReporte = {
 type TurneroDetalleReporte = {
   descripcion: string;
   valor: number;
+  beneficiario?: string | null;
+  documento_beneficiario?: string | null;
 };
 
 export default function ReportesPage() {
@@ -125,8 +127,10 @@ export default function ReportesPage() {
             const horario = String(t.horario || '').trim();
             turneroDetallesMap[id] = turneroDetallesMap[id] || [];
             turneroDetallesMap[id].push({
-              descripcion: horario ? `${nombre} - ${horario}` : nombre,
+              descripcion: '',
               valor: Number(t.valor) || 0,
+              beneficiario: nombre,
+              documento_beneficiario: horario || null,
             });
           });
           setTurnerosByCuadreId(turnerosMap);
@@ -220,7 +224,7 @@ export default function ReportesPage() {
         ))}
         {turneros.map((turnero, index) => (
           <p key={`turnero-${cuadreId}-${index}`}>
-            {`Turnero: ${turnero.descripcion} | ${formatCOP(turnero.valor)}`}
+            {`Turnero: Turnero ${turnero.beneficiario ? '| Beneficiario: ' + turnero.beneficiario : ''} ${turnero.documento_beneficiario ? '| NIT/Cédula: ' + turnero.documento_beneficiario : ''} | ${formatCOP(turnero.valor)}`}
           </p>
         ))}
       </div>
@@ -243,7 +247,16 @@ export default function ReportesPage() {
           .filter(Boolean)
           .join(' | ')
       ),
-      ...turneros.map((turnero) => `Turnero: ${turnero.descripcion} | Valor: ${formatCOP(turnero.valor)}`),
+      ...turneros.map((turnero) =>
+        [
+          'Turnero: Turnero',
+          turnero.beneficiario ? `Beneficiario: ${turnero.beneficiario}` : '',
+          turnero.documento_beneficiario ? `NIT/Cédula: ${turnero.documento_beneficiario}` : '',
+          `Valor: ${formatCOP(turnero.valor)}`,
+        ]
+          .filter(Boolean)
+          .join(' | ')
+      ),
     ].join(' || ');
   };
 
