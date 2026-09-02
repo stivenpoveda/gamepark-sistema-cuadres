@@ -134,22 +134,15 @@ export default function SuperadminReportesPage() {
         data: { session },
       } = await supabase.auth.getSession();
 
-      const [userRes, pdvRes, cuadresRes, gastosRes, turnerosRes] = await Promise.all([
+      const [userRes, pdvRes, cuadresRes] = await Promise.all([
         session?.user?.id
           ? supabase.from('usuarios').select('*').eq('id', session.user.id).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
         supabase.from('puntos_de_venta').select('*'),
         supabase.from('cuadres_diarios').select('*').order('fecha', { ascending: false }),
-        supabase
-          .from('gastos_diarios')
-          .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
-          .limit(999999),
-        supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').limit(999999),
       ]);
 
       if (cuadresRes.error) throw new Error(`Error BD cargando cuadres: ${cuadresRes.error.message}`);
-      const gastosRows = assertNoDbError<any>(gastosRes, 'Reportes SA - gastos_diarios');
-      const turnerosRows = assertNoDbError<any>(turnerosRes, 'Reportes SA - pagos_turneros');
 
       setUser(userRes.data || null);
 
@@ -161,6 +154,28 @@ export default function SuperadminReportesPage() {
 
       setCuadres(cuadresWithData);
       setPuntosVenta(pdvRes.data || []);
+
+      // MISMA ESTRATEGIA QUE EL DASHBOARD (la que ya funciona):
+      // cargar gastos/turneros por .in() chunk 80 para garantizar que trae
+      // EXACTAMENTE los mismos registros que el Dashboard principal.
+      const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
+      const gastosRows: any[] = [];
+      const turnerosRows: any[] = [];
+      if (cuadreIds.length > 0) {
+        const idBatches = chunk(cuadreIds, 80);
+        for (const batch of idBatches) {
+          const [gRes, tRes] = await Promise.all([
+            supabase
+              .from('gastos_diarios')
+              .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
+              .in('cuadre_id', batch)
+              .limit(999999),
+            supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', batch).limit(999999),
+          ]);
+          gastosRows.push(...assertNoDbError<any>(gRes, `Reportes SA - gastos_diarios (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+          turnerosRows.push(...assertNoDbError<any>(tRes, `Reportes SA - pagos_turneros (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+        }
+      }
 
       const gastosMap: Record<string, number> = {};
       const gastoDetallesMap: Record<string, GastoDetalleReporte[]> = {};
