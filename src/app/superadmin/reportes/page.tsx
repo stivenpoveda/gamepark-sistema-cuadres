@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { canManageSuperadminCatalogs, isAccountingRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getConsignacionSoportes, getCuentaConsignacionById, getCuadreConsignacionesRegistrables, getGastoCategoriaLabel, parseConsignacionMetadata } from '@/lib/utils';
+import { assertNoDbError, chunk } from '@/lib/batchDb';
 import { Loader2, ArrowLeft, Download, Menu, X, LogOut, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, PuntoDeVenta, Usuario } from '@/types';
@@ -146,6 +147,10 @@ export default function SuperadminReportesPage() {
         supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').limit(999999),
       ]);
 
+      if (cuadresRes.error) throw new Error(`Error BD cargando cuadres: ${cuadresRes.error.message}`);
+      const gastosRows = assertNoDbError<any>(gastosRes, 'Reportes SA - gastos_diarios');
+      const turnerosRows = assertNoDbError<any>(turnerosRes, 'Reportes SA - pagos_turneros');
+
       setUser(userRes.data || null);
 
       // Combine data como en la página principal
@@ -159,7 +164,7 @@ export default function SuperadminReportesPage() {
 
       const gastosMap: Record<string, number> = {};
       const gastoDetallesMap: Record<string, GastoDetalleReporte[]> = {};
-      (gastosRes.data || []).forEach((g) => {
+      gastosRows.forEach((g: any) => {
         gastosMap[g.cuadre_id] = (gastosMap[g.cuadre_id] || 0) + (Number(g.valor) || 0);
         gastoDetallesMap[g.cuadre_id] = gastoDetallesMap[g.cuadre_id] || [];
         gastoDetallesMap[g.cuadre_id].push({
@@ -175,7 +180,7 @@ export default function SuperadminReportesPage() {
 
       const turnerosMap: Record<string, number> = {};
       const turneroDetallesMap: Record<string, TurneroDetalleReporte[]> = {};
-      (turnerosRes.data || []).forEach((t) => {
+      turnerosRows.forEach((t: any) => {
         turnerosMap[t.cuadre_id] = (turnerosMap[t.cuadre_id] || 0) + (Number(t.valor) || 0);
         turneroDetallesMap[t.cuadre_id] = turneroDetallesMap[t.cuadre_id] || [];
         const nombre = String(t.nombre_turnero || 'Turnero');
@@ -395,16 +400,23 @@ export default function SuperadminReportesPage() {
       return;
     }
 
-    const [gastosRes, turnerosRes] = await Promise.all([
-      supabase
-        .from('gastos_diarios')
-        .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
-        .in('cuadre_id', cuadreIds)
-        .limit(999999),
-      supabase.from('pagos_turneros').select('cuadre_id,nombre_turnero,horario,valor').in('cuadre_id', cuadreIds).limit(999999),
-    ]);
+    const idBatches = chunk(cuadreIds, 80);
+    const gastosRowsAll: any[] = [];
+    const turnerosRowsAll: any[] = [];
+    for (const batch of idBatches) {
+      const [gRes, tRes] = await Promise.all([
+        supabase
+          .from('gastos_diarios')
+          .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
+          .in('cuadre_id', batch)
+          .limit(999999),
+        supabase.from('pagos_turneros').select('cuadre_id,nombre_turnero,horario,valor').in('cuadre_id', batch).limit(999999),
+      ]);
+      gastosRowsAll.push(...assertNoDbError<any>(gRes, `Export Excel SA - gastos_diarios (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+      turnerosRowsAll.push(...assertNoDbError<any>(tRes, `Export Excel SA - pagos_turneros (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+    }
 
-    const gastosById = (gastosRes.data || []).reduce<Record<string, Array<{
+    const gastosById = gastosRowsAll.reduce<Record<string, Array<{
       categoria: string;
       descripcion: string;
       valor: number;
@@ -427,7 +439,7 @@ export default function SuperadminReportesPage() {
       {}
     );
 
-    const turnerosById = (turnerosRes.data || []).reduce<Record<string, Array<{
+    const turnerosById = turnerosRowsAll.reduce<Record<string, Array<{
       descripcion: string;
       valor: number;
       beneficiario?: string | null;

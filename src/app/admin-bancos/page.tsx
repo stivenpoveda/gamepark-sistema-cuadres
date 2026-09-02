@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { formatCOP, getCuadreConsignacionesRegistrables } from '@/lib/utils';
+import { assertNoDbError } from '@/lib/batchDb';
 import {
   buildFinancialSummary,
   CuentaFinanciera,
@@ -73,13 +74,13 @@ export default function AdminBancosDashboardPage() {
           .limit(999999),
       ]);
 
-      setCuentas((accountsRes.data || []) as CuentaFinanciera[]);
+      setCuentas(assertNoDbError<CuentaFinanciera>(accountsRes, 'Admin Bancos - cuentas_financieras'));
       setMovimientos(
-        getEffectiveFinancialMovements((movementsRes.data || []) as MovimientoFinanciero[])
+        getEffectiveFinancialMovements(assertNoDbError<MovimientoFinanciero>(movementsRes, 'Admin Bancos - movimientos_financieros'))
       );
-      setCategorias((categoriesRes.data || []) as CategoriaFinanciera[]);
-      setPuntosVenta((pdvRes.data || []) as PuntoDeVenta[]);
-      setCuadres((cuadresRes.data || []) as CuadreSyncResumen[]);
+      setCategorias(assertNoDbError<CategoriaFinanciera>(categoriesRes, 'Admin Bancos - categorias_financieras'));
+      setPuntosVenta(assertNoDbError<PuntoDeVenta>(pdvRes, 'Admin Bancos - puntos_de_venta'));
+      setCuadres(assertNoDbError<CuadreSyncResumen>(cuadresRes, 'Admin Bancos - cuadres_diarios'));
       setLoading(false);
     };
 

@@ -5,6 +5,7 @@ import { authorizedJsonFetch } from '@/lib/admin-bancos';
 import { canManageSuperadminCatalogs, isAccountingRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getTodayString } from '@/lib/utils';
+import { assertNoDbError, chunk } from '@/lib/batchDb';
 import { Loader2, LogOut, Trash2, Filter, Menu, X, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -86,23 +87,31 @@ export default function SuperAdminDashboard() {
 
       const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
       if (cuadreIds.length > 0) {
-        const [gastosRes, turnerosRes] = await Promise.all([
-          supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds).limit(999999),
-          supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds).limit(999999),
-        ]);
+        const idBatches = chunk(cuadreIds, 80);
+        const gastosRows: any[] = [];
+        const turnerosRows: any[] = [];
+
+        for (const batch of idBatches) {
+          const [gRes, tRes] = await Promise.all([
+            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', batch).limit(999999),
+            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', batch).limit(999999),
+          ]);
+          gastosRows.push(...assertNoDbError<any>(gRes, `Dashboard SA - gastos_diarios (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+          turnerosRows.push(...assertNoDbError<any>(tRes, `Dashboard SA - pagos_turneros (lote ${idBatches.indexOf(batch) + 1}/${idBatches.length})`));
+        }
 
         const gastosMap: Record<string, number> = {};
-        for (const g of gastosRes.data || []) {
-          const id = (g as any).cuadre_id as string | undefined;
+        for (const g of gastosRows) {
+          const id = g.cuadre_id as string | undefined;
           if (!id) continue;
-          gastosMap[id] = (gastosMap[id] || 0) + (Number((g as any).valor) || 0);
+          gastosMap[id] = (gastosMap[id] || 0) + (Number(g.valor) || 0);
         }
 
         const turnerosMap: Record<string, number> = {};
-        for (const t of turnerosRes.data || []) {
-          const id = (t as any).cuadre_id as string | undefined;
+        for (const t of turnerosRows) {
+          const id = t.cuadre_id as string | undefined;
           if (!id) continue;
-          turnerosMap[id] = (turnerosMap[id] || 0) + (Number((t as any).valor) || 0);
+          turnerosMap[id] = (turnerosMap[id] || 0) + (Number(t.valor) || 0);
         }
 
         setGastosPorCuadreId(gastosMap);

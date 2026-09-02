@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { calcCuadreMetrics, formatCOP, formatDate, getGastoCategoriaLabel } from '@/lib/utils';
+import { assertNoDbError, chunk } from '@/lib/batchDb';
 import { Loader2, ArrowLeft, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { CuadreDiario, Usuario, PuntoDeVenta } from '@/types';
@@ -91,18 +92,25 @@ export default function ReportesPage() {
 
         const cuadreIds = (cuadresRes.data || []).map((c) => c.id).filter(Boolean) as string[];
         if (cuadreIds.length > 0) {
-          const [gastosRes, turnerosRes] = await Promise.all([
-            supabase
-              .from('gastos_diarios')
-              .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
-              .in('cuadre_id', cuadreIds)
-              .limit(999999),
-            supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', cuadreIds).limit(999999),
-          ]);
+          const idBatches = chunk(cuadreIds, 80);
+          const gastosRows: any[] = [];
+          const turnerosRows: any[] = [];
+          for (const batch of idBatches) {
+            const [gRes, tRes] = await Promise.all([
+              supabase
+                .from('gastos_diarios')
+                .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
+                .in('cuadre_id', batch)
+                .limit(999999),
+              supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', batch).limit(999999),
+            ]);
+            gastosRows.push(...assertNoDbError<any>(gRes, `Reportes Admin - gastos_diarios`));
+            turnerosRows.push(...assertNoDbError<any>(tRes, `Reportes Admin - pagos_turneros`));
+          }
 
           const gastosMap: Record<string, number> = {};
           const gastoDetallesMap: Record<string, GastoDetalleReporte[]> = {};
-          (gastosRes.data || []).forEach((g: any) => {
+          gastosRows.forEach((g: any) => {
             const id = g.cuadre_id as string | undefined;
             if (!id) return;
             gastosMap[id] = (gastosMap[id] || 0) + (Number(g.valor) || 0);
@@ -120,7 +128,7 @@ export default function ReportesPage() {
 
           const turnerosMap: Record<string, number> = {};
           const turneroDetallesMap: Record<string, TurneroDetalleReporte[]> = {};
-          (turnerosRes.data || []).forEach((t: any) => {
+          turnerosRows.forEach((t: any) => {
             const id = t.cuadre_id as string | undefined;
             if (!id) return;
             turnerosMap[id] = (turnerosMap[id] || 0) + (Number(t.valor) || 0);
