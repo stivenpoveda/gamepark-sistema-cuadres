@@ -61,15 +61,16 @@ export default function AdminBancosDashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       const [accountsRes, movementsRes, categoriesRes, pdvRes, cuadresRes] = await Promise.all([
-        supabase.from('cuentas_financieras').select('*').order('nombre'),
-        supabase.from('movimientos_financieros').select('*').eq('activo', true).order('fecha_movimiento', { ascending: false }),
-        supabase.from('categorias_financieras').select('*').eq('activa', true).order('nombre'),
-        supabase.from('puntos_de_venta').select('*').order('nombre'),
+        supabase.from('cuentas_financieras').select('*').order('nombre').limit(999999),
+        supabase.from('movimientos_financieros').select('*').eq('activo', true).order('fecha_movimiento', { ascending: false }).limit(999999),
+        supabase.from('categorias_financieras').select('*').eq('activa', true).order('nombre').limit(999999),
+        supabase.from('puntos_de_venta').select('*').order('nombre').limit(999999),
         supabase
           .from('cuadres_diarios')
           .select('id,fecha,punto_de_venta_id,estado,valor_consignado,firma_cajero_url,url_foto_consignacion,movimiento_financiero_sync_id')
           .neq('estado', 'borrador')
-          .order('fecha', { ascending: false }),
+          .order('fecha', { ascending: false })
+          .limit(999999),
       ]);
 
       setCuentas((accountsRes.data || []) as CuentaFinanciera[]);

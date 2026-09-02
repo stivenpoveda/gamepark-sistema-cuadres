@@ -95,8 +95,9 @@ export default function ReportesPage() {
             supabase
               .from('gastos_diarios')
               .select('cuadre_id,categoria,descripcion,valor,beneficiario,documento_beneficiario')
-              .in('cuadre_id', cuadreIds),
-            supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', cuadreIds),
+              .in('cuadre_id', cuadreIds)
+              .limit(999999),
+            supabase.from('pagos_turneros').select('cuadre_id,valor,nombre_turnero,horario').in('cuadre_id', cuadreIds).limit(999999),
           ]);
 
           const gastosMap: Record<string, number> = {};

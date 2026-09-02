@@ -79,8 +79,8 @@ export default function AdminDashboard() {
         const cuadreIds = (cuadresData || []).map((c) => c.id).filter(Boolean) as string[];
         if (cuadreIds.length > 0) {
           const [gastosRes, turnerosRes] = await Promise.all([
-            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
-            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds),
+            supabase.from('gastos_diarios').select('cuadre_id,valor').in('cuadre_id', cuadreIds).limit(999999),
+            supabase.from('pagos_turneros').select('cuadre_id,valor').in('cuadre_id', cuadreIds).limit(999999),
           ]);
 
           const gastosMap: Record<string, number> = {};
